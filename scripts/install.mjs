@@ -12,8 +12,13 @@ function fail(message) {
   process.exit(1)
 }
 
-// Windows needs a shell to resolve npm.cmd.
+// Windows needs a shell to resolve npm.cmd; prefer npm's own CLI to avoid that.
 function npm(args, options = {}) {
+  const cli = [
+    join(dirname(process.execPath), "node_modules", "npm", "bin", "npm-cli.js"),
+    join(dirname(process.execPath), "..", "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+  ].find(existsSync)
+  if (cli) return spawnSync(process.execPath, [cli, ...args], options)
   return spawnSync("npm", args, { shell: true, ...options })
 }
 

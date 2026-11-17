@@ -29,4 +29,4 @@ try {
 }
 
 node (Join-Path $target "scripts/install.mjs") @args
-exit $LASTEXITCODE
+if ($LASTEXITCODE -ne 0) { throw "Install failed with exit code $LASTEXITCODE." }
