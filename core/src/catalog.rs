@@ -39,6 +39,7 @@ pub struct CatalogOutput {
     pub items: Vec<Item>,
     pub errors: Vec<String>,
     pub sources: Vec<String>,
+    #[serde(rename = "fetchedAt")]
     pub fetched_at: u64,
 }
 
@@ -681,6 +682,13 @@ fn enc(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn catalog_output_serializes_fetched_at_as_camel_case() {
+        let output = CatalogOutput { items: vec![], errors: vec![], sources: vec![], fetched_at: 7 };
+        let json = serde_json::to_string(&output).unwrap();
+        assert!(json.contains("\"fetchedAt\":7"), "{json}");
+    }
 
     #[test]
     fn encodes_query_values() {
