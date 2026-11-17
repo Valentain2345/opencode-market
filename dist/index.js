@@ -3,9 +3,11 @@ import { Plugin } from "@opencode/plugin";
 
 // src/core.ts
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse } from "jsonc-parser";
 var TIMEOUT = 9e4;
 function exe() {
   return process.platform === "win32" ? "market-core.exe" : "market-core";
@@ -21,15 +23,41 @@ function moduleDir() {
     return process.cwd();
   }
 }
+function configuredRoots() {
+  const dir = process.env.XDG_CONFIG_HOME?.trim() ? join(process.env.XDG_CONFIG_HOME.trim(), "opencode") : join(homedir(), ".config", "opencode");
+  const roots = [];
+  for (const name of ["opencode.jsonc", "opencode.json"]) {
+    try {
+      const data = parse(readFileSync(join(dir, name), "utf8"));
+      const plugins = Array.isArray(data?.plugins) ? data.plugins : [];
+      for (const entry of plugins) {
+        const value = typeof entry === "string" ? entry : entry?.package;
+        if (typeof value !== "string" || value.length === 0) continue;
+        roots.push(isAbsolute(value) ? value : resolve(dir, value));
+      }
+      return roots;
+    } catch {
+    }
+  }
+  return roots;
+}
+function engineCandidates(roots, binary = exe()) {
+  return roots.flatMap((base) => [
+    join(base, binary),
+    join(base, "dist", binary),
+    join(base, "core", "target", "release", binary)
+  ]);
+}
 function command() {
   const override = process.env.MARKET_CORE;
   if (override !== void 0 && override.length > 0) return { command: override, prefix: [] };
   const dir = moduleDir();
   const binary = exe();
-  for (const base of [dir, join(dir, ".."), join(dir, "..", "..")]) {
-    for (const candidate of [join(base, binary), join(base, "dist", binary), join(base, "core", "target", "release", binary)]) {
-      if (existsSync(candidate)) return { command: candidate, prefix: [] };
-    }
+  const roots = [dir, join(dir, ".."), join(dir, "..", ".."), ...configuredRoots()];
+  for (const candidate of engineCandidates(roots, binary)) {
+    if (existsSync(candidate)) return { command: candidate, prefix: [] };
+  }
+  for (const base of roots) {
     const manifest = join(base, "core", "Cargo.toml");
     if (existsSync(manifest)) {
       return { command: "cargo", prefix: ["run", "--quiet", "--release", "--manifest-path", manifest, "--"] };
@@ -38,7 +66,7 @@ function command() {
   throw new Error("The Rust catalog engine is missing. Run `npm run build` or set MARKET_CORE.");
 }
 function runCore(args) {
-  return new Promise((resolve2, reject) => {
+  return new Promise((resolve3, reject) => {
     const resolved = command();
     const child = spawn(resolved.command, [...resolved.prefix, ...args], { windowsHide: true });
     let stdout = "";
@@ -50,7 +78,7 @@ function runCore(args) {
       settled = true;
       clearTimeout(timer);
       if (error) reject(error);
-      else resolve2(value);
+      else resolve3(value);
     };
     timer = setTimeout(() => {
       child.kill();
@@ -78,7 +106,7 @@ function runCore(args) {
 }
 
 // src/sources.ts
-import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync as existsSync3, mkdirSync, readFileSync as readFileSync2, writeFileSync } from "node:fs";
 import { join as join3 } from "node:path";
 
 // src/source-schema.ts
@@ -91,14 +119,14 @@ var SOURCE_TYPES = {
 // src/gui/config.ts
 import { existsSync as existsSync2 } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir as homedir2 } from "node:os";
 import { join as join2 } from "node:path";
-import { applyEdits, modify, parse } from "jsonc-parser";
+import { applyEdits, modify, parse as parse2 } from "jsonc-parser";
 var SCHEMA_URL = "https://opencode.ai/config.json";
 function globalConfigDir() {
   const xdg = process.env.XDG_CONFIG_HOME;
   if (xdg && xdg.trim().length > 0) return join2(xdg, "opencode");
-  return join2(homedir(), ".config", "opencode");
+  return join2(homedir2(), ".config", "opencode");
 }
 function skillsDir() {
   return join2(globalConfigDir(), "skills");
@@ -123,7 +151,7 @@ async function readConfigText(path = configPath()) {
 }
 async function readConfig(path = configPath()) {
   const text = await readConfigText(path);
-  const value = parse(text, [], { allowTrailingComma: true, disallowComments: false });
+  const value = parse2(text, [], { allowTrailingComma: true, disallowComments: false });
   if (value && typeof value === "object" && !Array.isArray(value)) return value;
   return {};
 }
@@ -284,7 +312,7 @@ function parseFile(text, file) {
 function readSources(dir = globalConfigDir()) {
   const file = sourcesPath(dir);
   if (!existsSync3(file)) return defaultSources();
-  return parseFile(readFileSync(file, "utf8"), file);
+  return parseFile(readFileSync2(file, "utf8"), file);
 }
 function writeSources(sources2, dir = globalConfigDir()) {
   mkdirSync(dir, { recursive: true });
@@ -368,7 +396,7 @@ function skillRawBase(item) {
 
 // src/gui/install.ts
 import { mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import { dirname as dirname2, isAbsolute, relative, resolve } from "node:path";
+import { dirname as dirname2, isAbsolute as isAbsolute2, relative, resolve as resolve2 } from "node:path";
 
 // src/gui/cli.ts
 import { spawn as spawn2 } from "node:child_process";
@@ -397,7 +425,7 @@ function discover() {
 }
 function runCli(args, timeoutMs = 12e4) {
   const [bin, ...prefix] = argv.length > 0 ? argv : discover();
-  return new Promise((resolve2) => {
+  return new Promise((resolve3) => {
     let stdout = "";
     let stderr = "";
     let started = false;
@@ -409,7 +437,7 @@ function runCli(args, timeoutMs = 12e4) {
       settled = true;
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
-      resolve2({
+      resolve3({
         ok: code === 0 && started && !timedOut,
         started,
         timedOut,
@@ -423,7 +451,7 @@ function runCli(args, timeoutMs = 12e4) {
     try {
       child = spawn2(bin, [...prefix, ...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
     } catch (error) {
-      resolve2({
+      resolve3({
         ok: false,
         started: false,
         timedOut: false,
@@ -453,7 +481,7 @@ function runCli(args, timeoutMs = 12e4) {
       settled = true;
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
-      resolve2({
+      resolve3({
         ok: false,
         started,
         timedOut,
@@ -550,14 +578,14 @@ async function installSkill(item) {
   if (files.length === 0) return { ok: false, message: "This skill has no files.", needsReload: false };
   if (files.length > 400) return { ok: false, message: "This skill has too many files.", needsReload: false };
   const raw = skillRawBase(item);
-  const root = resolve(skillsDir(), item.name);
+  const root = resolve2(skillsDir(), item.name);
   let written = 0;
   for (let i = 0; i < files.length; i += 8) {
     await Promise.all(
       files.slice(i, i + 8).map(async (file) => {
         if (file.size > 2 * 1024 * 1024) return;
-        const target = resolve(root, file.path);
-        if (relative(root, target).startsWith("..") || isAbsolute(relative(root, target))) return;
+        const target = resolve2(root, file.path);
+        if (relative(root, target).startsWith("..") || isAbsolute2(relative(root, target))) return;
         const response = await fetch(`${raw}${file.path}`, { signal: AbortSignal.timeout(25e3) });
         if (!response.ok) throw new Error(`${response.status} while downloading ${file.path}`);
         await mkdir2(dirname2(target), { recursive: true });
@@ -585,14 +613,14 @@ async function removeMcp(item) {
   return { ok: true, message: `Removed MCP server "${keys.join('", "')}".`, needsReload: false };
 }
 async function removeSkill(item) {
-  const root = resolve(skillsDir());
-  const target = resolve(root, item.name);
+  const root = resolve2(skillsDir());
+  const target = resolve2(root, item.name);
   const inside = relative(root, target);
-  if (inside.length === 0 || inside.startsWith("..") || isAbsolute(inside)) {
+  if (inside.length === 0 || inside.startsWith("..") || isAbsolute2(inside)) {
     return { ok: false, message: "Refusing to delete outside the skills directory.", needsReload: false };
   }
   try {
-    await readFile2(resolve(target, "SKILL.md"));
+    await readFile2(resolve2(target, "SKILL.md"));
   } catch {
     return { ok: false, message: "Not a skill directory.", needsReload: false };
   }

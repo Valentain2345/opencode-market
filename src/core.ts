@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process"
-import { existsSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { existsSync, readFileSync } from "node:fs"
+import { homedir } from "node:os"
+import { dirname, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { parse } from "jsonc-parser"
 
 const TIMEOUT = 90_000
 
@@ -23,6 +25,40 @@ function moduleDir(): string {
   }
 }
 
+/**
+ * The GUI host evaluates the bundle without `__filename`, so fall back to the
+ * plugin directories named in the global config.
+ */
+export function configuredRoots(): string[] {
+  const dir = process.env.XDG_CONFIG_HOME?.trim()
+    ? join(process.env.XDG_CONFIG_HOME.trim(), "opencode")
+    : join(homedir(), ".config", "opencode")
+  const roots: string[] = []
+  for (const name of ["opencode.jsonc", "opencode.json"]) {
+    try {
+      const data = parse(readFileSync(join(dir, name), "utf8")) as { plugins?: unknown }
+      const plugins = Array.isArray(data?.plugins) ? data.plugins : []
+      for (const entry of plugins) {
+        const value = typeof entry === "string" ? entry : (entry as { package?: unknown } | null)?.package
+        if (typeof value !== "string" || value.length === 0) continue
+        roots.push(isAbsolute(value) ? value : resolve(dir, value))
+      }
+      return roots
+    } catch {
+      // Try the other config name.
+    }
+  }
+  return roots
+}
+
+export function engineCandidates(roots: string[], binary = exe()): string[] {
+  return roots.flatMap((base) => [
+    join(base, binary),
+    join(base, "dist", binary),
+    join(base, "core", "target", "release", binary),
+  ])
+}
+
 /** The compiled engine, a local build, or `cargo run` in a checkout. */
 function command(): { command: string; prefix: string[] } {
   const override = process.env.MARKET_CORE
@@ -30,10 +66,11 @@ function command(): { command: string; prefix: string[] } {
 
   const dir = moduleDir()
   const binary = exe()
-  for (const base of [dir, join(dir, ".."), join(dir, "..", "..")]) {
-    for (const candidate of [join(base, binary), join(base, "dist", binary), join(base, "core", "target", "release", binary)]) {
-      if (existsSync(candidate)) return { command: candidate, prefix: [] }
-    }
+  const roots = [dir, join(dir, ".."), join(dir, "..", ".."), ...configuredRoots()]
+  for (const candidate of engineCandidates(roots, binary)) {
+    if (existsSync(candidate)) return { command: candidate, prefix: [] }
+  }
+  for (const base of roots) {
     const manifest = join(base, "core", "Cargo.toml")
     if (existsSync(manifest)) {
       return { command: "cargo", prefix: ["run", "--quiet", "--release", "--manifest-path", manifest, "--"] }
