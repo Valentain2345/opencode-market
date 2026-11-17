@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "description": "Marketplace for OpenCode Desktop: browse and install plugins, MCP servers and skills.",
+  "license": "Apache-2.0",
   "exports": {
     ".": "./dist/index.js",
     "./gui-experimental": "./dist/gui-experimental.cjs",
@@ -13,7 +14,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "vite build && esbuild src/index.ts --bundle --platform=node --format=esm --external:@opencode/plugin --external:jsonc-parser --outfile=dist/index.js",
+    "build": "node scripts/build-core.mjs && vite build && esbuild src/index.ts --bundle --platform=node --format=esm --external:@opencode/plugin --external:jsonc-parser --outfile=dist/index.js",
+    "test": "cargo test --manifest-path core/Cargo.toml && tsx --test tests/sources.test.ts",
     "typecheck": "tsc --noEmit",
     "smoke": "tsx scripts/smoke.ts"
   },

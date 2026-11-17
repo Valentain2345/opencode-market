@@ -28,8 +28,50 @@ export const Item = Schema.Struct({
   url: Schema.optional(Schema.String),
   /** Local MCP command, when the kind is `mcp` and it is a stdio server. */
   command: Schema.optional(Schema.Array(Schema.String)),
+  /** The source that listed this item. */
+  source: Schema.optional(Schema.String),
+  /** Skill origin, so installs work from any repository. */
+  repo: Schema.optional(Schema.String),
+  ref: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
 })
 export type Item = typeof Item.Type
+
+/** The adapters a source can use. */
+export const SourceType = Schema.Union([
+  Schema.Literal("npm"),
+  Schema.Literal("mcp-registry"),
+  Schema.Literal("github-skills"),
+  Schema.Literal("github"),
+  Schema.Literal("catalog"),
+])
+export type SourceType = typeof SourceType.Type
+
+/** A configured catalog source. */
+export const Source = Schema.Struct({
+  id: Schema.String,
+  kind: Kind,
+  type: SourceType,
+  enabled: Schema.Boolean,
+  url: Schema.optional(Schema.String),
+  repo: Schema.optional(Schema.String),
+  path: Schema.optional(Schema.String),
+  ref: Schema.optional(Schema.String),
+})
+export type Source = typeof Source.Type
+
+export const SourcesState = Schema.Struct({
+  sources: Schema.Array(Source),
+  path: Schema.String,
+  error: Schema.String,
+})
+export type SourcesState = typeof SourcesState.Type
+
+export const AddSourceInput = Schema.Struct({ source: Source })
+export type AddSourceInput = typeof AddSourceInput.Type
+
+export const RemoveSourceInput = Schema.Struct({ id: Schema.String })
+export type RemoveSourceInput = typeof RemoveSourceInput.Type
 
 export const InstalledPlugin = Schema.Struct({
   /** The entry exactly as written in the config. */
@@ -104,5 +146,8 @@ export const Market = Ipc.define({
     install: { input: MutateInput, output: MutationResult },
     remove: { input: MutateInput, output: MutationResult },
     reload: { output: MutationResult },
+    sources: { output: SourcesState },
+    addSource: { input: AddSourceInput, output: SourcesState },
+    removeSource: { input: RemoveSourceInput, output: SourcesState },
   },
 })

@@ -1,302 +1,92 @@
 // src/index.ts
 import { Plugin } from "@opencode/plugin";
 
-// src/gui/catalog.ts
-var NPM_SEARCH = "https://registry.npmjs.org/-/v1/search";
-var MCP_SERVERS = "https://registry.modelcontextprotocol.io/v0/servers";
-var SKILLS_REPO = "https://github.com/anthropics/skills";
-var SKILLS_BRANCH = "main";
-var SKILLS_RAW = `https://raw.githubusercontent.com/anthropics/skills/${SKILLS_BRANCH}/`;
-var SKILLS_TREE = `https://api.github.com/repos/anthropics/skills/git/trees/${SKILLS_BRANCH}?recursive=1`;
-var CACHE_TTL = 10 * 60 * 1e3;
-var cache = /* @__PURE__ */ new Map();
-async function fetchJson(url, timeoutMs = 25e3) {
-  const response = await fetch(url, {
-    headers: { accept: "application/json", "user-agent": "opencode-market" },
-    signal: AbortSignal.timeout(timeoutMs)
-  });
-  if (!response.ok) throw new Error(`${response.status} ${response.statusText} \xB7 ${url}`);
-  return await response.json();
-}
-async function cached(key, force, load) {
-  const hit = cache.get(key);
-  if (!force && hit && Date.now() - hit.at < CACHE_TTL) return hit.value;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  return value;
-}
-function oneLine(text, limit = 320) {
-  return String(text ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
-}
-async function pluginItems(query, force, index) {
-  const text = query.trim().length > 0 ? `keywords:opencode-plugin ${query.trim()}` : "keywords:opencode-plugin";
-  const url = `${NPM_SEARCH}?text=${encodeURIComponent(text)}&size=100`;
-  const data = await cached(`npm:${text}`, force, () => fetchJson(url));
-  const items = [];
-  for (const object of data.objects ?? []) {
-    const pkg = object.package;
-    if (!pkg?.name || !pkg.version) continue;
-    const downloads = object.downloads?.weekly ?? 0;
-    items.push({
-      id: `plugin:${pkg.name}`,
-      kind: "plugin",
-      name: pkg.name,
-      title: pkg.name,
-      description: oneLine(pkg.description) || "(no description)",
-      version: pkg.version,
-      homepage: pkg.links?.homepage || pkg.links?.repository || pkg.links?.npm || `https://www.npmjs.com/package/${pkg.name}`,
-      meta: `npm \xB7 ${downloads >= 1e3 ? `${Math.round(downloads / 100) / 10}k` : downloads} dl/wk`,
-      installed: index.pluginNames.has(pkg.name)
-    });
-  }
-  return items;
-}
-function isLatest(entry) {
-  const official = entry._meta?.["io.modelcontextprotocol.registry/official"];
-  if (!official) return true;
-  if (official.status && official.status !== "active") return false;
-  return official.isLatest !== false;
-}
-async function mcpPaged(query, force) {
-  const search2 = query.trim();
-  return cached(`mcp:servers:${search2.toLowerCase()}`, force, async () => {
-    const seen = /* @__PURE__ */ new Set();
-    const servers = [];
-    let cursor;
-    const pages = search2.length > 0 ? 1 : 4;
-    for (let page = 0; page < pages; page++) {
-      const params = new URLSearchParams({ limit: "100" });
-      if (search2.length > 0) params.set("search", search2);
-      if (cursor) params.set("cursor", cursor);
-      const data = await fetchJson(`${MCP_SERVERS}?${params.toString()}`);
-      for (const entry of data.servers ?? []) {
-        const server = entry.server;
-        if (!server?.name || seen.has(server.name) || !isLatest(entry)) continue;
-        seen.add(server.name);
-        servers.push(server);
-      }
-      cursor = data.metadata?.nextCursor;
-      if (!cursor) break;
-    }
-    return servers;
-  });
-}
-function mcpSlug(server) {
-  const base = (server.title || server.name || "server").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
-  return base.length > 0 ? base : "server";
-}
-function mcpItems(query, force, index) {
-  return mcpPaged(query, force).then((servers) => {
-    const items = [];
-    for (const server of servers) {
-      const remote = server.remotes?.find((entry) => entry.type === "streamable-http") ?? server.remotes?.[0];
-      const pkg = server.packages?.find((entry) => entry.registryType === "npm" && entry.identifier);
-      if (!remote?.url && !pkg) continue;
-      const title = server.title || server.name || "";
-      const description = oneLine(server.description) || "(no description)";
-      const command = !remote?.url && pkg ? ["npx", "-y", `${pkg.identifier}@${pkg.version ?? "latest"}`] : void 0;
-      const installed2 = remote?.url ? index.mcpUrls.has(remote.url) : command ? index.mcpCommands.has(command.join(" ")) : false;
-      items.push({
-        id: `mcp:${server.name}`,
-        kind: "mcp",
-        name: server.name ?? mcpSlug(server),
-        title,
-        description,
-        version: server.version ?? "",
-        homepage: server.websiteUrl || server.repository?.url || `https://registry.modelcontextprotocol.io/v0/servers`,
-        meta: remote?.url ? `remote \xB7 ${new URL(remote.url).host}` : `local \xB7 ${pkg?.identifier}`,
-        installed: installed2,
-        url: remote?.url,
-        command
-      });
-    }
-    return items;
-  });
-}
-async function skillsTree(force = false) {
-  const data = await cached("skills:tree", force, () => fetchJson(SKILLS_TREE));
-  return (data.tree ?? []).filter((entry) => entry.type === "blob" && typeof entry.path === "string");
-}
-async function skillFiles(name) {
-  const prefix = `skills/${name}/`;
-  const tree = await skillsTree();
-  return tree.filter((entry) => entry.path.startsWith(prefix)).map((entry) => ({ path: entry.path.slice(prefix.length), size: entry.size ?? 0 }));
-}
-function parseFrontmatter(text) {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
-  if (!match) return { name: "", description: "" };
-  const body = match[1];
-  const name = /^name:\s*(.+)$/m.exec(body)?.[1]?.trim() ?? "";
-  let description = /^description:\s*(.+)$/m.exec(body)?.[1]?.trim() ?? "";
-  if (description === ">" || description === "|" || description === ">-" || description === "|-") {
-    const block = /^description:\s*[>|]-?\s*\r?\n((?:[ \t]+.*\r?\n?)+)/m.exec(body)?.[1] ?? "";
-    description = block.replace(/\r?\n/g, " ").trim();
-  }
-  return {
-    name: name.replace(/^["']|["']$/g, ""),
-    description: description.replace(/^["']|["']$/g, "")
-  };
-}
-async function skillItems(query, force, index) {
-  const q = query.trim().toLowerCase();
-  const tree = await skillsTree(force);
-  const dirs = /* @__PURE__ */ new Set();
-  for (const entry of tree) {
-    const match = /^skills\/([^/]+)\/SKILL\.md$/.exec(entry.path);
-    if (match) dirs.add(match[1]);
-  }
-  const items = await Promise.all(
-    [...dirs].sort().map(async (name) => {
-      let front = { name: "", description: "" };
-      try {
-        const response = await fetch(`${SKILLS_RAW}skills/${name}/SKILL.md`, { signal: AbortSignal.timeout(2e4) });
-        if (response.ok) front = parseFrontmatter(await response.text());
-      } catch {
-      }
-      const title = front.name || name;
-      const description = oneLine(front.description) || "(no description)";
-      if (q.length > 0 && !`${name} ${title} ${description}`.toLowerCase().includes(q)) return void 0;
-      const count = tree.filter((entry) => entry.path.startsWith(`skills/${name}/`)).length;
-      return {
-        id: `skill:${name}`,
-        kind: "skill",
-        name,
-        title,
-        description,
-        version: "",
-        homepage: `${SKILLS_REPO}/tree/${SKILLS_BRANCH}/skills/${name}`,
-        meta: `github \xB7 ${count} files`,
-        installed: index.skillNames.has(name)
-      };
-    })
-  );
-  return items.filter((item) => item !== void 0);
-}
-async function catalog(kind, query, force, index) {
-  try {
-    const items = kind === "plugin" ? await pluginItems(query, force, index) : kind === "mcp" ? await mcpItems(query, force, index) : await skillItems(query, force, index);
-    return {
-      items,
-      error: "",
-      source: kind === "plugin" ? "npm" : kind === "mcp" ? "mcp-registry" : "github",
-      fetchedAt: Date.now()
-    };
-  } catch (error) {
-    return {
-      items: [],
-      error: error instanceof Error ? error.message : String(error),
-      source: kind === "plugin" ? "npm" : kind === "mcp" ? "mcp-registry" : "github",
-      fetchedAt: Date.now()
-    };
-  }
-}
-
-// src/gui/install.ts
-import { mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
-
-// src/gui/cli.ts
+// src/core.ts
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-var ANSI = /\u001b\[[0-9;]*m/g;
-var OUTPUT_LIMIT = 64 * 1024;
-var argv = [];
-function summarize(stdout, stderr) {
-  const lines = `${stderr}
-${stdout}`.replace(ANSI, "").split(/\r?\n/).map((line2) => line2.trim()).filter((line2) => line2.length > 0 && !/^at\s/.test(line2) && !/^\^$/.test(line2)).map((line2) => line2.replace(/^\[cause\]:\s*/i, "").replace(/^[A-Za-z]*Error:\s*/, ""));
-  return lines.slice(-3).join(" \xB7 ").slice(0, 400);
+import { existsSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+var TIMEOUT = 9e4;
+function exe() {
+  return process.platform === "win32" ? "market-core.exe" : "market-core";
 }
-function discover() {
-  const env = process.env.OPENCODE_CLI?.trim();
-  if (env) return [env];
-  const root = process.env.APPDATA ? join(process.env.APPDATA, "ai.opencode.desktop", "cli") : "";
-  if (root && existsSync(root)) {
-    const versions = readdirSync(root).filter((name) => /^\d+\.\d+\.\d+/.test(name)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true })).reverse();
-    for (const version of versions) {
-      const candidate = join(root, version, process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli");
-      if (existsSync(candidate)) return [candidate];
+function moduleDir() {
+  try {
+    return __dirname;
+  } catch {
+  }
+  try {
+    return dirname(fileURLToPath(import.meta.url));
+  } catch {
+    return process.cwd();
+  }
+}
+function command() {
+  const override = process.env.MARKET_CORE;
+  if (override !== void 0 && override.length > 0) return { command: override, prefix: [] };
+  const dir = moduleDir();
+  const binary = exe();
+  for (const base of [dir, join(dir, ".."), join(dir, "..", "..")]) {
+    for (const candidate of [join(base, binary), join(base, "dist", binary), join(base, "core", "target", "release", binary)]) {
+      if (existsSync(candidate)) return { command: candidate, prefix: [] };
+    }
+    const manifest = join(base, "core", "Cargo.toml");
+    if (existsSync(manifest)) {
+      return { command: "cargo", prefix: ["run", "--quiet", "--release", "--manifest-path", manifest, "--"] };
     }
   }
-  return ["opencode"];
+  throw new Error("The Rust catalog engine is missing. Run `npm run build` or set MARKET_CORE.");
 }
-function runCli(args, timeoutMs = 12e4) {
-  const [bin, ...prefix] = argv.length > 0 ? argv : discover();
-  return new Promise((resolve2) => {
+function runCore(args) {
+  return new Promise((resolve2, reject) => {
+    const resolved = command();
+    const child = spawn(resolved.command, [...resolved.prefix, ...args], { windowsHide: true });
     let stdout = "";
     let stderr = "";
-    let started = false;
     let settled = false;
-    let timedOut = false;
-    let killTimer;
-    const finish = (code) => {
+    let timer;
+    const finish = (error, value) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      resolve2({
-        ok: code === 0 && started && !timedOut,
-        started,
-        timedOut,
-        code,
-        stdout,
-        stderr,
-        message: timedOut ? `Command timed out after ${Math.round(timeoutMs / 1e3)}s.` : summarize(stdout, stderr)
-      });
+      if (error) reject(error);
+      else resolve2(value);
     };
-    let child;
-    try {
-      child = spawn(bin, [...prefix, ...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
-    } catch (error) {
-      resolve2({
-        ok: false,
-        started: false,
-        timedOut: false,
-        code: -1,
-        stdout: "",
-        stderr: "",
-        message: error instanceof Error ? error.message : String(error)
-      });
-      return;
-    }
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-      killTimer = setTimeout(() => child.kill("SIGKILL"), 3e3);
-    }, timeoutMs);
+    timer = setTimeout(() => {
+      child.kill();
+      finish(new Error("The catalog engine took too long to answer."));
+    }, TIMEOUT);
     child.stdout?.on("data", (chunk) => {
-      if (stdout.length < OUTPUT_LIMIT) stdout = (stdout + String(chunk)).slice(0, OUTPUT_LIMIT);
+      if (stdout.length < 8e6) stdout += chunk.toString();
     });
     child.stderr?.on("data", (chunk) => {
-      if (stderr.length < OUTPUT_LIMIT) stderr = (stderr + String(chunk)).slice(0, OUTPUT_LIMIT);
+      if (stderr.length < 16e3) stderr += chunk.toString();
     });
-    child.on("spawn", () => {
-      started = true;
+    child.on("error", (error) => finish(new Error(`Could not start the catalog engine: ${error.message}`)));
+    child.on("close", (code) => {
+      if (code !== 0) {
+        finish(new Error(stderr.trim() || `The catalog engine exited with code ${code}.`));
+        return;
+      }
+      try {
+        finish(void 0, JSON.parse(stdout));
+      } catch {
+        finish(new Error(`The catalog engine returned invalid JSON: ${stdout.slice(0, 200)}`));
+      }
     });
-    child.on("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      resolve2({
-        ok: false,
-        started,
-        timedOut,
-        code: -1,
-        stdout,
-        stderr: `${stderr}${error.message}`,
-        message: error.message
-      });
-    });
-    child.on("close", (code) => finish(code ?? -1));
   });
 }
-function pluginAdd(spec) {
-  return runCli(["plugin", "add", spec], 18e4);
-}
-function pluginRemove(spec) {
-  return runCli(["plugin", "remove", spec], 6e4);
-}
+
+// src/sources.ts
+import { existsSync as existsSync3, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join as join3 } from "node:path";
+
+// src/source-schema.ts
+var SOURCE_TYPES = {
+  plugin: ["npm", "github", "catalog"],
+  mcp: ["mcp-registry", "github", "catalog"],
+  skill: ["github-skills", "github", "catalog"]
+};
 
 // src/gui/config.ts
 import { existsSync as existsSync2 } from "node:fs";
@@ -415,8 +205,275 @@ async function editConfig(edits, path = configPath()) {
   await writeFile(path, text, "utf8");
 }
 
+// src/sources.ts
+var ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+var REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+function defaultSources() {
+  return [
+    { id: "npm", kind: "plugin", type: "npm", enabled: true },
+    {
+      id: "mcp-registry",
+      kind: "mcp",
+      type: "mcp-registry",
+      enabled: true,
+      url: "https://registry.modelcontextprotocol.io/v0/servers"
+    },
+    {
+      id: "anthropics",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "anthropics/skills",
+      path: "skills",
+      ref: "main"
+    }
+  ];
+}
+function sourcesPath(dir = globalConfigDir()) {
+  return join3(dir, "market.sources.json");
+}
+function validateSource(input) {
+  const id = String(input.id ?? "").trim().toLowerCase();
+  if (!ID.test(id)) throw new Error("Source id must be 1-32 characters: lowercase letters, digits or dashes.");
+  const kind = input.kind;
+  if (!(kind in SOURCE_TYPES)) throw new Error(`Unknown kind "${String(kind)}".`);
+  const types = SOURCE_TYPES[kind];
+  if (!types.includes(input.type)) {
+    throw new Error(`${kind === "plugin" ? "Plugin" : kind === "mcp" ? "MCP" : "Skill"} sources cannot be "${input.type}".`);
+  }
+  const source = { id, kind, type: input.type, enabled: input.enabled !== false };
+  if (input.type === "github" || input.type === "github-skills") {
+    const repo = String(input.repo ?? "").trim();
+    if (!REPO.test(repo)) throw new Error("Repository must look like owner/name.");
+    source.repo = repo;
+    const path = String(input.path ?? "").trim().replace(/^\/+|\/+$/g, "");
+    if (input.type === "github" && path.length === 0) throw new Error("A GitHub JSON source needs a file path.");
+    if (path.length > 0) source.path = path;
+    const ref = String(input.ref ?? "").trim();
+    if (ref.length > 0) source.ref = ref;
+  } else if (input.type === "catalog" || input.type === "mcp-registry") {
+    const url = String(input.url ?? "").trim();
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("Source URL must be a full http(s) URL.");
+    }
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw new Error("Source URL must be http(s).");
+    source.url = url;
+  }
+  return source;
+}
+function parseFile(text, file) {
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`${file} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  const list = Array.isArray(data) ? data : data?.sources;
+  if (!Array.isArray(list)) throw new Error(`${file} needs a "sources" array.`);
+  const sources2 = list.map((entry) => validateSource(entry));
+  const ids = /* @__PURE__ */ new Set();
+  for (const source of sources2) {
+    if (ids.has(source.id)) throw new Error(`${file} lists "${source.id}" twice.`);
+    ids.add(source.id);
+  }
+  return sources2;
+}
+function readSources(dir = globalConfigDir()) {
+  const file = sourcesPath(dir);
+  if (!existsSync3(file)) return defaultSources();
+  return parseFile(readFileSync(file, "utf8"), file);
+}
+function writeSources(sources2, dir = globalConfigDir()) {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(sourcesPath(dir), JSON.stringify({ version: 1, sources: sources2 }, null, 2) + "\n");
+}
+function addSource(input, dir = globalConfigDir()) {
+  const source = validateSource(input);
+  const sources2 = readSources(dir);
+  if (sources2.some((entry) => entry.id === source.id)) throw new Error(`A source with id "${source.id}" already exists.`);
+  const next = [...sources2, source];
+  writeSources(next, dir);
+  return next;
+}
+function removeSource(id, dir = globalConfigDir()) {
+  const sources2 = readSources(dir);
+  const next = sources2.filter((source) => source.id !== id.toLowerCase());
+  if (next.length === sources2.length) throw new Error(`No source with id "${id}".`);
+  writeSources(next, dir);
+  return next;
+}
+
+// src/gui/catalog.ts
+function installed(item, index) {
+  if (item.kind === "plugin") return index.pluginNames.has(item.name);
+  if (item.kind === "mcp")
+    return item.url !== void 0 && index.mcpUrls.has(item.url) || item.command !== void 0 && index.mcpCommands.has(item.command.join(" "));
+  return index.skillNames.has(item.name);
+}
+async function catalog(kind, query, force, index) {
+  const dir = globalConfigDir();
+  try {
+    readSources(dir);
+    const output = await runCore([
+      "catalog",
+      "--kind",
+      kind,
+      "--query",
+      query,
+      "--sources",
+      sourcesPath(dir),
+      ...force ? ["--refresh"] : []
+    ]);
+    return {
+      items: output.items.map((item) => ({ ...item, installed: installed(item, index) })),
+      error: output.errors.join("; "),
+      source: output.sources.join(", "),
+      fetchedAt: output.fetchedAt
+    };
+  } catch (error) {
+    return {
+      items: [],
+      error: error instanceof Error ? error.message : String(error),
+      source: "",
+      fetchedAt: Date.now()
+    };
+  }
+}
+function skillSource(item) {
+  if (!item.repo) throw new Error("This skill does not name its repository. Refresh the catalog and try again.");
+  return {
+    repo: item.repo,
+    ref: item.ref ?? "main",
+    base: (item.path ?? "").replace(/^\/+|\/+$/g, "")
+  };
+}
+async function skillFiles(item) {
+  const { repo, ref, base } = skillSource(item);
+  const prefix = `${base.length > 0 ? `${base}/` : ""}${item.name}/`;
+  const response = await fetch(`https://api.github.com/repos/${repo}/git/trees/${encodeURIComponent(ref)}?recursive=1`, {
+    headers: { accept: "application/json", "user-agent": "opencode-market" },
+    signal: AbortSignal.timeout(25e3)
+  });
+  if (!response.ok) throw new Error(`${response.status} while listing ${repo}.`);
+  const data = await response.json();
+  return (data.tree ?? []).filter((entry) => entry.type === "blob" && typeof entry.path === "string" && entry.path.startsWith(prefix)).map((entry) => ({ path: entry.path.slice(prefix.length), size: entry.size ?? 0 }));
+}
+function skillRawBase(item) {
+  const { repo, ref, base } = skillSource(item);
+  return `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(ref)}/${base.length > 0 ? `${base}/` : ""}${encodeURIComponent(item.name)}/`;
+}
+
 // src/gui/install.ts
-var RAW = "https://raw.githubusercontent.com/anthropics/skills/main/";
+import { mkdir as mkdir2, readFile as readFile2, rm, writeFile as writeFile2 } from "node:fs/promises";
+import { dirname as dirname2, isAbsolute, relative, resolve } from "node:path";
+
+// src/gui/cli.ts
+import { spawn as spawn2 } from "node:child_process";
+import { existsSync as existsSync4, readdirSync } from "node:fs";
+import { join as join4 } from "node:path";
+var ANSI = /\u001b\[[0-9;]*m/g;
+var OUTPUT_LIMIT = 64 * 1024;
+var argv = [];
+function summarize(stdout, stderr) {
+  const lines = `${stderr}
+${stdout}`.replace(ANSI, "").split(/\r?\n/).map((line2) => line2.trim()).filter((line2) => line2.length > 0 && !/^at\s/.test(line2) && !/^\^$/.test(line2)).map((line2) => line2.replace(/^\[cause\]:\s*/i, "").replace(/^[A-Za-z]*Error:\s*/, ""));
+  return lines.slice(-3).join(" \xB7 ").slice(0, 400);
+}
+function discover() {
+  const env = process.env.OPENCODE_CLI?.trim();
+  if (env) return [env];
+  const root = process.env.APPDATA ? join4(process.env.APPDATA, "ai.opencode.desktop", "cli") : "";
+  if (root && existsSync4(root)) {
+    const versions = readdirSync(root).filter((name) => /^\d+\.\d+\.\d+/.test(name)).sort((a, b) => a.localeCompare(b, void 0, { numeric: true })).reverse();
+    for (const version of versions) {
+      const candidate = join4(root, version, process.platform === "win32" ? "opencode-cli.exe" : "opencode-cli");
+      if (existsSync4(candidate)) return [candidate];
+    }
+  }
+  return ["opencode"];
+}
+function runCli(args, timeoutMs = 12e4) {
+  const [bin, ...prefix] = argv.length > 0 ? argv : discover();
+  return new Promise((resolve2) => {
+    let stdout = "";
+    let stderr = "";
+    let started = false;
+    let settled = false;
+    let timedOut = false;
+    let killTimer;
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve2({
+        ok: code === 0 && started && !timedOut,
+        started,
+        timedOut,
+        code,
+        stdout,
+        stderr,
+        message: timedOut ? `Command timed out after ${Math.round(timeoutMs / 1e3)}s.` : summarize(stdout, stderr)
+      });
+    };
+    let child;
+    try {
+      child = spawn2(bin, [...prefix, ...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+    } catch (error) {
+      resolve2({
+        ok: false,
+        started: false,
+        timedOut: false,
+        code: -1,
+        stdout: "",
+        stderr: "",
+        message: error instanceof Error ? error.message : String(error)
+      });
+      return;
+    }
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => child.kill("SIGKILL"), 3e3);
+    }, timeoutMs);
+    child.stdout?.on("data", (chunk) => {
+      if (stdout.length < OUTPUT_LIMIT) stdout = (stdout + String(chunk)).slice(0, OUTPUT_LIMIT);
+    });
+    child.stderr?.on("data", (chunk) => {
+      if (stderr.length < OUTPUT_LIMIT) stderr = (stderr + String(chunk)).slice(0, OUTPUT_LIMIT);
+    });
+    child.on("spawn", () => {
+      started = true;
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve2({
+        ok: false,
+        started,
+        timedOut,
+        code: -1,
+        stdout,
+        stderr: `${stderr}${error.message}`,
+        message: error.message
+      });
+    });
+    child.on("close", (code) => finish(code ?? -1));
+  });
+}
+function pluginAdd(spec) {
+  return runCli(["plugin", "add", spec], 18e4);
+}
+function pluginRemove(spec) {
+  return runCli(["plugin", "remove", spec], 6e4);
+}
+
+// src/gui/install.ts
 var configQueue = Promise.resolve();
 function serial(task) {
   const next = configQueue.then(task, task);
@@ -484,9 +541,15 @@ async function installSkill(item) {
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(item.name)) {
     return { ok: false, message: "Invalid skill name.", needsReload: false };
   }
-  const files = await skillFiles(item.name);
+  let files;
+  try {
+    files = await skillFiles(item);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error), needsReload: false };
+  }
   if (files.length === 0) return { ok: false, message: "This skill has no files.", needsReload: false };
   if (files.length > 400) return { ok: false, message: "This skill has too many files.", needsReload: false };
+  const raw = skillRawBase(item);
   const root = resolve(skillsDir(), item.name);
   let written = 0;
   for (let i = 0; i < files.length; i += 8) {
@@ -495,9 +558,9 @@ async function installSkill(item) {
         if (file.size > 2 * 1024 * 1024) return;
         const target = resolve(root, file.path);
         if (relative(root, target).startsWith("..") || isAbsolute(relative(root, target))) return;
-        const response = await fetch(`${RAW}skills/${item.name}/${file.path}`, { signal: AbortSignal.timeout(25e3) });
+        const response = await fetch(`${raw}${file.path}`, { signal: AbortSignal.timeout(25e3) });
         if (!response.ok) throw new Error(`${response.status} while downloading ${file.path}`);
-        await mkdir2(dirname(target), { recursive: true });
+        await mkdir2(dirname2(target), { recursive: true });
         await writeFile2(target, Buffer.from(await response.arrayBuffer()));
         written++;
       })
@@ -507,8 +570,8 @@ async function installSkill(item) {
   return { ok: true, message: `Installed skill "${item.name}" (${written} files).`, needsReload: false };
 }
 async function removePlugin(item) {
-  const installed2 = await installedPlugins();
-  const entry = installed2.find((plugin) => plugin.name === item.name);
+  const installed3 = await installedPlugins();
+  const entry = installed3.find((plugin) => plugin.name === item.name);
   const spec = entry?.spec ?? item.name;
   const result = await pluginRemove(spec);
   if (!result.ok) return { ok: false, message: result.message || "The plugin did not remove.", needsReload: false };
@@ -587,7 +650,7 @@ ${items.join("\n")}${more}`;
   );
   return sections.join("\n\n");
 }
-async function installed() {
+async function installed2() {
   const state = await snapshot();
   if (state.error.length > 0) return `Could not read the global config: ${state.error}`;
   const format = (values) => values.length > 0 ? values.join(", ") : "none";
@@ -599,11 +662,52 @@ async function installed() {
     `skills: ${format(state.skills.map((skill) => skill.name))}`
   ].join("\n");
 }
+function sources() {
+  try {
+    const list = readSources();
+    const lines = list.map((source) => `${source.id} (${source.kind}, ${source.type}) ${source.repo ?? source.url ?? ""}`.trim());
+    return [`sources file: ${sourcesPath()}`, lines.length > 0 ? lines.join("\n") : "no sources"].join("\n");
+  } catch (error) {
+    return `Could not read sources: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+function addSourceFromTool(input) {
+  if (!input.kind) return "addSource needs a kind: plugin, mcp or skill.";
+  const id = (input.id ?? "").trim();
+  if (id.length === 0) return "addSource needs an id.";
+  if (!input.type) return "addSource needs a type.";
+  const source = { id, kind: input.kind, type: input.type, enabled: true };
+  if (input.url !== void 0) source.url = input.url;
+  if (input.repo !== void 0) source.repo = input.repo;
+  if (input.path !== void 0) source.path = input.path;
+  if (input.ref !== void 0) source.ref = input.ref;
+  try {
+    addSource(source);
+    return `Added source "${id}".
+${sources()}`;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+function removeSourceFromTool(input) {
+  const id = (input.id ?? "").trim();
+  if (id.length === 0) return "removeSource needs an id.";
+  try {
+    removeSource(id);
+    return `Removed source "${id}".
+${sources()}`;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+}
 async function marketplace(input, runtime) {
   const action = input.action;
   const kinds = input.kind ? [input.kind] : KINDS;
   if (action === "search") return search(input.query ?? "", kinds);
-  if (action === "installed") return installed();
+  if (action === "installed") return installed2();
+  if (action === "sources") return sources();
+  if (action === "addSource") return addSourceFromTool(input);
+  if (action === "removeSource") return removeSourceFromTool(input);
   if (action !== "install" && action !== "remove") return `Unknown action "${String(action)}".`;
   const kind = input.kind;
   const name = (input.name ?? "").trim();
@@ -654,14 +758,24 @@ var index_default = Plugin.define({
     await ctx.tool.transform((editor) => {
       editor.add({
         name: "marketplace",
-        description: 'Search, install and remove OpenCode plugins, MCP servers and skills from the in-app marketplace. Actions: "search" (optional kind and query), "installed", "install" and "remove" (need kind and the exact name). Installs write to the global OpenCode config; skills go to ~/.config/opencode/skills.',
+        description: 'Search, install and remove OpenCode plugins, MCP servers and skills from the in-app marketplace, and manage where the catalog reads from. Actions: "search" (optional kind and query), "installed", "install" and "remove" (need kind and the exact name), "sources" (list catalog sources), "addSource" and "removeSource" (need kind and id; addSource also needs type and its target). Installs write to the global OpenCode config; skills go to ~/.config/opencode/skills. Source types: plugin npm|github|catalog, mcp mcp-registry|github|catalog, skill github-skills|github|catalog. github and github-skills need repo (owner/name); github also needs path; catalog needs url.',
         input: {
           type: "object",
           properties: {
-            action: { type: "string", enum: ["search", "installed", "install", "remove"] },
+            action: { type: "string", enum: ["search", "installed", "install", "remove", "sources", "addSource", "removeSource"] },
             kind: { type: "string", enum: ["plugin", "mcp", "skill"] },
             query: { type: "string" },
-            name: { type: "string" }
+            name: { type: "string" },
+            id: { type: "string", description: "Source id for addSource/removeSource." },
+            type: {
+              type: "string",
+              enum: ["npm", "mcp-registry", "github-skills", "github", "catalog"],
+              description: "Source type for addSource."
+            },
+            url: { type: "string", description: "Catalog URL for a catalog or mcp-registry source." },
+            repo: { type: "string", description: "owner/name for a github or github-skills source." },
+            path: { type: "string", description: "JSON file path (github) or skills directory (github-skills)." },
+            ref: { type: "string", description: "Git branch or tag; defaults to main." }
           },
           required: ["action"],
           additionalProperties: false

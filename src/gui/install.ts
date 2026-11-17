@@ -2,7 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, relative, resolve } from "node:path"
 
 import type { Item, MutationResult } from "../contract"
-import { skillFiles } from "./catalog"
+import { skillFiles, skillRawBase } from "./catalog"
 import { pluginAdd, pluginRemove, reload } from "./cli"
 import {
   asRecord,
@@ -14,8 +14,6 @@ import {
   readConfig,
   skillsDir,
 } from "./config"
-
-const RAW = "https://raw.githubusercontent.com/anthropics/skills/main/"
 
 // plugin add and editConfig both read-modify-write the same global config, so those mutations run one at a time.
 let configQueue: Promise<unknown> = Promise.resolve()
@@ -102,10 +100,16 @@ async function installSkill(item: Item): Promise<MutationResult> {
   if (!/^[a-z0-9][a-z0-9._-]*$/i.test(item.name)) {
     return { ok: false, message: "Invalid skill name.", needsReload: false }
   }
-  const files = await skillFiles(item.name)
+  let files: { path: string; size: number }[]
+  try {
+    files = await skillFiles(item)
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error), needsReload: false }
+  }
   if (files.length === 0) return { ok: false, message: "This skill has no files.", needsReload: false }
   if (files.length > 400) return { ok: false, message: "This skill has too many files.", needsReload: false }
 
+  const raw = skillRawBase(item)
   const root = resolve(skillsDir(), item.name)
   let written = 0
   for (let i = 0; i < files.length; i += 8) {
@@ -114,7 +118,7 @@ async function installSkill(item: Item): Promise<MutationResult> {
         if (file.size > 2 * 1024 * 1024) return
         const target = resolve(root, file.path)
         if (relative(root, target).startsWith("..") || isAbsolute(relative(root, target))) return
-        const response = await fetch(`${RAW}skills/${item.name}/${file.path}`, { signal: AbortSignal.timeout(25_000) })
+        const response = await fetch(`${raw}${file.path}`, { signal: AbortSignal.timeout(25_000) })
         if (!response.ok) throw new Error(`${response.status} while downloading ${file.path}`)
         await mkdir(dirname(target), { recursive: true })
         await writeFile(target, Buffer.from(await response.arrayBuffer()))

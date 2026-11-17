@@ -2,12 +2,20 @@ import type { Item, Kind, MarketState } from "./contract"
 import { catalog } from "./gui/catalog"
 import type { InstalledIndex } from "./gui/catalog"
 import { install, remove, snapshot } from "./gui/install"
+import type { MarketSource, SourceType } from "./source-schema"
+import { addSource, readSources, removeSource, sourcesPath } from "./sources"
 
 export interface ToolInput {
-  action: "search" | "installed" | "install" | "remove"
+  action: "search" | "installed" | "install" | "remove" | "sources" | "addSource" | "removeSource"
   kind?: Kind
   query?: string
   name?: string
+  id?: string
+  type?: SourceType
+  url?: string
+  repo?: string
+  path?: string
+  ref?: string
 }
 
 interface Runtime {
@@ -72,11 +80,53 @@ async function installed(): Promise<string> {
   ].join("\n")
 }
 
+function sources(): string {
+  try {
+    const list = readSources()
+    const lines = list.map((source) => `${source.id} (${source.kind}, ${source.type}) ${source.repo ?? source.url ?? ""}`.trim())
+    return [`sources file: ${sourcesPath()}`, lines.length > 0 ? lines.join("\n") : "no sources"].join("\n")
+  } catch (error) {
+    return `Could not read sources: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+function addSourceFromTool(input: ToolInput): string {
+  if (!input.kind) return "addSource needs a kind: plugin, mcp or skill."
+  const id = (input.id ?? "").trim()
+  if (id.length === 0) return "addSource needs an id."
+  if (!input.type) return "addSource needs a type."
+  const source: MarketSource = { id, kind: input.kind, type: input.type, enabled: true }
+  if (input.url !== undefined) source.url = input.url
+  if (input.repo !== undefined) source.repo = input.repo
+  if (input.path !== undefined) source.path = input.path
+  if (input.ref !== undefined) source.ref = input.ref
+  try {
+    addSource(source)
+    return `Added source "${id}".\n${sources()}`
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
+function removeSourceFromTool(input: ToolInput): string {
+  const id = (input.id ?? "").trim()
+  if (id.length === 0) return "removeSource needs an id."
+  try {
+    removeSource(id)
+    return `Removed source "${id}".\n${sources()}`
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error)
+  }
+}
+
 export async function marketplace(input: ToolInput, runtime: Runtime): Promise<string> {
   const action = input.action
   const kinds = input.kind ? [input.kind] : KINDS
   if (action === "search") return search(input.query ?? "", kinds)
   if (action === "installed") return installed()
+  if (action === "sources") return sources()
+  if (action === "addSource") return addSourceFromTool(input)
+  if (action === "removeSource") return removeSourceFromTool(input)
   if (action !== "install" && action !== "remove") return `Unknown action "${String(action)}".`
 
   const kind = input.kind

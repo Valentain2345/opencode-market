@@ -1,11 +1,9 @@
-import { For, Show, createMemo, createResource, createSignal } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onMount } from "solid-js"
 import type { JSX } from "solid-js"
 
 import type { IpcClient, SetupContext } from "@opencode/plugin/gui"
-import type { Kind, Market } from "../contract"
-import type { Item } from "../contract"
-
-type Tab = Kind | "installed"
+import type { CatalogResult, Item, Kind, Market, MarketState, SourcesState } from "../contract"
+import { SOURCE_LABEL, SOURCE_TYPES, type MarketSource, type SourceType } from "../source-schema"
 
 const KINDS: { kind: Kind; label: string; icon: "extensions" | "mcp" | "graduation-cap" }[] = [
   { kind: "plugin", label: "Plugins", icon: "extensions" },
@@ -16,46 +14,144 @@ const KINDS: { kind: Kind; label: string; icon: "extensions" | "mcp" | "graduati
 const MUTED: JSX.CSSProperties = { color: "var(--text-weak, #888)" }
 const ROW: JSX.CSSProperties = { display: "flex", gap: "6px", "align-items": "center", "flex-wrap": "wrap" }
 const BAR: JSX.CSSProperties = { display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "12px", "flex-wrap": "wrap" }
+const PANEL: JSX.CSSProperties = {
+  border: "1px solid var(--border-weak, #333)",
+  "border-radius": "6px",
+  padding: "10px",
+  "margin-top": "10px",
+}
+const FIELD: JSX.CSSProperties = { flex: "1 1 160px", "min-width": "140px" }
+
+const MCP_DEFAULT = "https://registry.modelcontextprotocol.io/v0/servers"
+
+function keyOf(kind: Kind, query: string): string {
+  return `${kind}|${query}`
+}
+
+function labelOf(kind: Kind): string {
+  return KINDS.find((entry) => entry.kind === kind)?.label ?? kind
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+function sourceTarget(source: MarketSource): string {
+  if (source.repo) return `${source.repo}${source.path ? `/${source.path}` : ""}${source.ref ? `@${source.ref}` : ""}`
+  return source.url ?? "built-in registry"
+}
 
 export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<typeof Market.spec> }) {
   const [kind, setKind] = createSignal<Kind>("plugin")
   const [draft, setDraft] = createSignal("")
   const [query, setQuery] = createSignal("")
+  const [cache, setCache] = createSignal<ReadonlyMap<string, CatalogResult>>(new Map())
+  const [loadingKeys, setLoadingKeys] = createSignal<ReadonlySet<string>>(new Set())
+  const inflight = new Set<string>()
+  const [state, setState] = createSignal<MarketState>()
+  const [stateLoading, setStateLoading] = createSignal(false)
   const [pending, setPending] = createSignal<ReadonlySet<string>>(new Set())
   const [needsReload, setNeedsReload] = createSignal(false)
   const [reloading, setReloading] = createSignal(false)
   const [note, setNote] = createSignal("")
 
-  const [result, { refetch: refetchCatalog }] = createResource(
-    () => ({ kind: kind(), query: query() }),
-    (input) => props.admin.catalog({ kind: input.kind, query: input.query, force: false }),
-  )
-  const [state, { refetch: refetchState }] = createResource(() => props.admin.installed())
+  const [showSources, setShowSources] = createSignal(false)
+  const [sourcesState, setSourcesState] = createSignal<SourcesState>()
+  const [sourceType, setSourceType] = createSignal<SourceType>("npm")
+  const [sourceId, setSourceId] = createSignal("")
+  const [sourceUrl, setSourceUrl] = createSignal("")
+  const [sourceRepo, setSourceRepo] = createSignal("")
+  const [sourcePath, setSourcePath] = createSignal("")
+  const [sourceRef, setSourceRef] = createSignal("")
+  const [addingSource, setAddingSource] = createSignal(false)
+
+  const currentKey = createMemo(() => keyOf(kind(), query()))
+  const current = createMemo(() => cache().get(currentKey()))
+  const catalogBusy = createMemo(() => loadingKeys().has(currentKey()))
+
+  async function loadKind(target: Kind, search: string, force: boolean) {
+    const key = keyOf(target, search)
+    if (inflight.has(key)) return
+    inflight.add(key)
+    setLoadingKeys((keys) => new Set(keys).add(key))
+    try {
+      const value = await props.admin.catalog({ kind: target, query: search, force })
+      setCache((values) => new Map(values).set(key, value))
+    } catch (error) {
+      const value: CatalogResult = { items: [], error: messageOf(error), source: "", fetchedAt: Date.now() }
+      setCache((values) => new Map(values).set(key, value))
+    } finally {
+      inflight.delete(key)
+      setLoadingKeys((keys) => {
+        const next = new Set(keys)
+        next.delete(key)
+        return next
+      })
+    }
+  }
+
+  async function loadState() {
+    setStateLoading(true)
+    try {
+      setState(await props.admin.installed())
+    } catch (error) {
+      setNote(messageOf(error))
+    } finally {
+      setStateLoading(false)
+    }
+  }
+
+  async function loadSources() {
+    try {
+      setSourcesState(await props.admin.sources())
+    } catch (error) {
+      setSourcesState({ sources: [], path: "", error: messageOf(error) })
+    }
+  }
+
+  createEffect(() => {
+    const target = kind()
+    const search = query()
+    void loadKind(target, search, false)
+  })
+
+  createEffect(() => {
+    const types = SOURCE_TYPES[kind()]
+    if (!types.includes(sourceType())) setSourceType(types[0] ?? "catalog")
+  })
+
+  onMount(() => {
+    void loadState()
+    void loadSources()
+    // Warm the other tabs so switching never waits on the network.
+    void loadKind("mcp", "", false)
+    void loadKind("skill", "", false)
+  })
 
   const isInstalled = (item: Item): boolean => {
-    const current = state()
-    if (!current) return item.installed
-    if (item.kind === "plugin") return current.plugins.some((plugin) => plugin.name === item.name)
+    const latest = state()
+    if (!latest) return item.installed
+    if (item.kind === "plugin") return latest.plugins.some((plugin) => plugin.name === item.name)
     if (item.kind === "mcp")
-      return current.mcps.some(
+      return latest.mcps.some(
         (mcp) => (item.url !== undefined && mcp.detail === item.url) || (item.command !== undefined && mcp.detail === item.command.join(" ")),
       )
-    return current.skills.some((skill) => skill.name === item.name)
+    return latest.skills.some((skill) => skill.name === item.name)
   }
 
   const visible = createMemo(() => {
     const text = draft().trim().toLowerCase()
-    const items = result()?.items ?? []
+    const items = current()?.items ?? []
     if (text.length === 0) return items
     return items.filter((item) => `${item.title} ${item.name} ${item.description}`.toLowerCase().includes(text))
   })
 
   const installedRows = createMemo(() => {
-    const current = state()
-    if (!current) return []
-    if (kind() === "plugin") return current.plugins.map((plugin) => ({ key: plugin.name, title: plugin.name, detail: plugin.spec }))
-    if (kind() === "mcp") return current.mcps.map((mcp) => ({ key: mcp.name, title: mcp.name, detail: `${mcp.type} · ${mcp.detail}` }))
-    return current.skills.map((skill) => ({ key: skill.name, title: skill.name, detail: skill.path }))
+    const latest = state()
+    if (!latest) return []
+    if (kind() === "plugin") return latest.plugins.map((plugin) => ({ key: plugin.name, title: plugin.name, detail: plugin.spec }))
+    if (kind() === "mcp") return latest.mcps.map((mcp) => ({ key: mcp.name, title: mcp.name, detail: `${mcp.type} · ${mcp.detail}` }))
+    return latest.skills.map((skill) => ({ key: skill.name, title: skill.name, detail: skill.path }))
   })
 
   async function act(item: Item, operation: "install" | "remove") {
@@ -66,15 +162,11 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
       const call = operation === "install" ? props.admin.install : props.admin.remove
       const response = await call({ item })
       setNote(response.message)
-      props.ctx.toast.show({
-        title: "Marketplace",
-        description: response.message,
-        variant: response.ok ? "success" : "error",
-      })
-      await refetchState()
+      props.ctx.toast.show({ title: "Marketplace", description: response.message, variant: response.ok ? "success" : "error" })
+      await loadState()
       if (response.ok && response.needsReload) setNeedsReload(true)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
+      const message = messageOf(error)
       setNote(message)
       props.ctx.toast.show({ title: "Marketplace", description: message, variant: "error" })
     } finally {
@@ -94,22 +186,22 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
       setNote(response.message)
       if (response.ok) {
         setNeedsReload(false)
-        await refetchState()
+        await loadState()
         props.ctx.layout.settings("market")
       }
     } catch (error) {
-      setNote(error instanceof Error ? error.message : String(error))
+      setNote(messageOf(error))
     } finally {
       setReloading(false)
     }
   }
 
   const removeInstalled = async (title: string) => {
-    const current = state()
-    if (!current) return
+    const latest = state()
+    if (!latest) return
     let item: Item | undefined
     if (kind() === "plugin") {
-      const found = current.plugins.find((plugin) => plugin.name === title)
+      const found = latest.plugins.find((plugin) => plugin.name === title)
       if (found)
         item = {
           id: `plugin:${found.name}`,
@@ -123,7 +215,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
           installed: true,
         }
     } else if (kind() === "mcp") {
-      const found = current.mcps.find((mcp) => mcp.name === title)
+      const found = latest.mcps.find((mcp) => mcp.name === title)
       item = {
         id: `mcp:${title}`,
         kind: "mcp",
@@ -138,7 +230,6 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
         command: found?.type === "remote" ? undefined : found?.detail.split(" "),
       }
     } else {
-      const found = current.skills.find((skill) => skill.name === title)
       item = {
         id: `skill:${title}`,
         kind: "skill",
@@ -154,6 +245,62 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
     if (item) await act(item, "remove")
   }
 
+  async function submitSource() {
+    if (addingSource()) return
+    const type = sourceType()
+    const id = sourceId().trim()
+    if (id.length === 0) {
+      setNote("Give the new source an id, for example acme.")
+      return
+    }
+    const source: MarketSource = { id, kind: kind(), type, enabled: true }
+    if (type === "catalog" || type === "mcp-registry") source.url = sourceUrl().trim() || (type === "mcp-registry" ? MCP_DEFAULT : "")
+    if (type === "github" || type === "github-skills") {
+      source.repo = sourceRepo().trim()
+      source.path = sourcePath().trim()
+      if (sourceRef().trim().length > 0) source.ref = sourceRef().trim()
+    }
+    setAddingSource(true)
+    try {
+      const response = await props.admin.addSource({ source })
+      setSourcesState(response)
+      if (response.error.length > 0) {
+        props.ctx.toast.show({ title: "Marketplace", description: response.error, variant: "error" })
+        return
+      }
+      setNote(`Added source "${id}".`)
+      setSourceId("")
+      setSourceUrl("")
+      setSourceRepo("")
+      setSourcePath("")
+      setSourceRef("")
+      setCache(new Map())
+      void loadKind(kind(), query(), true)
+      props.ctx.toast.show({ title: "Marketplace", description: `Added source "${id}".`, variant: "success" })
+    } catch (error) {
+      setNote(messageOf(error))
+    } finally {
+      setAddingSource(false)
+    }
+  }
+
+  async function dropSource(id: string) {
+    try {
+      const response = await props.admin.removeSource({ id })
+      setSourcesState(response)
+      if (response.error.length > 0) {
+        props.ctx.toast.show({ title: "Marketplace", description: response.error, variant: "error" })
+        return
+      }
+      setNote(`Removed source "${id}".`)
+      setCache(new Map())
+      void loadKind(kind(), query(), true)
+      props.ctx.toast.show({ title: "Marketplace", description: `Removed source "${id}".`, variant: "success" })
+    } catch (error) {
+      setNote(messageOf(error))
+    }
+  }
+
   return (
     <props.ctx.ui.SettingsLayout
       title="Marketplace"
@@ -163,10 +310,8 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
           icon="refresh"
           size="small"
           variant="neutral"
-          busy={result.loading || state.loading}
-          onClick={() => {
-            void Promise.all([refetchCatalog(), refetchState()])
-          }}
+          busy={catalogBusy() || stateLoading()}
+          onClick={() => void Promise.all([loadKind(kind(), query(), true), loadState()])}
         >
           Refresh
         </props.ctx.ui.Button>
@@ -188,6 +333,14 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
         <Show when={pending().size > 0}>
           <span style={{ ...MUTED, "font-size": "11px" }}>{pending().size} running…</span>
         </Show>
+        <props.ctx.ui.Button
+          icon="globe"
+          size="small"
+          variant={showSources() ? "contrast" : "ghost-muted"}
+          onClick={() => setShowSources((value) => !value)}
+        >
+          Sources
+        </props.ctx.ui.Button>
       </div>
 
       <div style={BAR}>
@@ -197,7 +350,9 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
             onInput={setDraft}
             onSubmit={(value) => setQuery(value)}
             label="Search the marketplace"
-            placeholder={kind() === "plugin" ? "Search npm for OpenCode plugins" : kind() === "mcp" ? "Search MCP servers" : "Search skills"}
+            placeholder={
+              kind() === "plugin" ? "Search npm for OpenCode plugins" : kind() === "mcp" ? "Search MCP servers" : "Search skills"
+            }
             type="search"
           />
         </div>
@@ -233,18 +388,113 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
         </div>
       </Show>
 
+      <Show when={showSources()}>
+        <props.ctx.ui.SettingsSection
+          title="Sources"
+          footer={
+            <p style={{ ...MUTED, "font-size": "11px" }}>
+              {sourcesState()?.path ? `File: ${sourcesState()!.path}` : " "}
+              <Show when={sourcesState()?.error}>
+                <br />
+                <span style={{ color: "var(--text-danger, #e5484d)" }}>{sourcesState()!.error}</span>
+              </Show>
+            </p>
+          }
+        >
+          <Show
+            when={(sourcesState()?.sources.length ?? 0) > 0}
+            fallback={<p style={{ padding: "12px", ...MUTED }}>No sources yet. Add one below.</p>}
+          >
+            <For each={sourcesState()!.sources}>
+              {(source) => (
+                <props.ctx.ui.SettingsRow
+                  title={
+                    <span style={ROW}>
+                      {source.id}
+                      <span style={{ ...MUTED, "font-size": "11px" }}>{SOURCE_LABEL[source.type as SourceType] ?? source.type}</span>
+                    </span>
+                  }
+                  description={<span style={{ "font-size": "11px" }}>{sourceTarget(source)}</span>}
+                >
+                  <props.ctx.ui.Button icon="trash" size="small" variant="ghost" onClick={() => void dropSource(source.id)}>
+                    Remove
+                  </props.ctx.ui.Button>
+                </props.ctx.ui.SettingsRow>
+              )}
+            </For>
+          </Show>
+
+          <div style={PANEL}>
+            <p style={{ margin: "0 0 8px", "font-size": "12px" }}>Add a source for {labelOf(kind()).toLowerCase()}</p>
+            <div style={BAR}>
+              <For each={SOURCE_TYPES[kind()]}>
+                {(type) => (
+                  <props.ctx.ui.Button
+                    size="small"
+                    variant={sourceType() === type ? "contrast" : "neutral"}
+                    onClick={() => setSourceType(type)}
+                  >
+                    {SOURCE_LABEL[type]}
+                  </props.ctx.ui.Button>
+                )}
+              </For>
+            </div>
+            <div style={BAR}>
+              <div style={FIELD}>
+                <props.ctx.ui.TextInput value={sourceId()} onInput={setSourceId} label="Source id" placeholder="acme" />
+              </div>
+              <Show when={sourceType() === "catalog" || sourceType() === "mcp-registry"}>
+                <div style={{ ...FIELD, flex: "2 1 260px" }}>
+                  <props.ctx.ui.TextInput
+                    value={sourceUrl()}
+                    onInput={setSourceUrl}
+                    label="Catalog URL"
+                    placeholder={sourceType() === "mcp-registry" ? MCP_DEFAULT : "https://example.com/plugins.json"}
+                  />
+                </div>
+              </Show>
+              <Show when={sourceType() === "github" || sourceType() === "github-skills"}>
+                <div style={FIELD}>
+                  <props.ctx.ui.TextInput value={sourceRepo()} onInput={setSourceRepo} label="Repository" placeholder="owner/repo" />
+                </div>
+                <div style={FIELD}>
+                  <props.ctx.ui.TextInput
+                    value={sourcePath()}
+                    onInput={setSourcePath}
+                    label="Path"
+                    placeholder={sourceType() === "github" ? "plugins.json" : "skills"}
+                  />
+                </div>
+                <div style={FIELD}>
+                  <props.ctx.ui.TextInput value={sourceRef()} onInput={setSourceRef} label="Branch" placeholder="main" />
+                </div>
+              </Show>
+              <props.ctx.ui.Button variant="contrast" size="small" busy={addingSource()} onClick={() => void submitSource()}>
+                Add source
+              </props.ctx.ui.Button>
+            </div>
+          </div>
+        </props.ctx.ui.SettingsSection>
+        <div style={{ "margin-top": "20px" }} />
+      </Show>
+
       <props.ctx.ui.SettingsSection
-        title={`${KINDS.find((entry) => entry.kind === kind())?.label ?? ""} · ${visible().length}`}
+        title={`${labelOf(kind())} · ${current() ? visible().length : "…"}`}
         footer={
-          <Show when={result()?.error}>
-            <p style={{ color: "var(--text-danger, #e5484d)", margin: "8px 0 0" }}>{result()!.error}</p>
+          <Show when={catalogBusy() || current()?.error}>
+            <p
+              style={{
+                ...MUTED,
+                margin: "8px 0 0",
+                ...(current()?.error ? { color: "var(--text-danger, #e5484d)" } : {}),
+              }}
+            >
+              {current()?.error || (current() ? "Updating…" : `Loading ${labelOf(kind()).toLowerCase()}…`)}
+            </p>
           </Show>
         }
       >
-        <Show
-          when={!result.loading || visible().length > 0}
-          fallback={<p style={{ padding: "12px", ...MUTED }}>Loading…</p>}
-        >
+        <Show when={current()} fallback={<p style={{ padding: "12px", ...MUTED }}>Loading {labelOf(kind()).toLowerCase()}…</p>}>
           <Show
             when={visible().length > 0}
             fallback={<p style={{ padding: "12px", ...MUTED }}>Nothing matched. Try a different search.</p>}
@@ -310,25 +560,28 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
 
       <div style={{ "margin-top": "20px" }} />
 
-      <props.ctx.ui.SettingsSection
-        title={`Installed ${KINDS.find((entry) => entry.kind === kind())?.label.toLowerCase() ?? ""} · ${installedRows().length}`}
-      >
-        <Show when={installedRows().length > 0} fallback={<p style={{ padding: "12px", ...MUTED }}>Nothing installed yet.</p>}>
-          <For each={installedRows()}>
-            {(row) => (
-              <props.ctx.ui.SettingsRow title={row.title} description={<span style={{ "font-size": "11px" }}>{row.detail}</span>}>
-                <props.ctx.ui.Button
-                  icon="trash"
-                  size="small"
-                  variant="ghost"
-                  busy={pending().has(`${kind()}:${row.key}`)}
-                  onClick={() => void removeInstalled(row.title)}
-                >
-                  Remove
-                </props.ctx.ui.Button>
-              </props.ctx.ui.SettingsRow>
-            )}
-          </For>
+      <props.ctx.ui.SettingsSection title={`Installed ${labelOf(kind()).toLowerCase()} · ${installedRows().length}`}>
+        <Show
+          when={state()}
+          fallback={<p style={{ padding: "12px", ...MUTED }}>Loading installed…</p>}
+        >
+          <Show when={installedRows().length > 0} fallback={<p style={{ padding: "12px", ...MUTED }}>Nothing installed yet.</p>}>
+            <For each={installedRows()}>
+              {(row) => (
+                <props.ctx.ui.SettingsRow title={row.title} description={<span style={{ "font-size": "11px" }}>{row.detail}</span>}>
+                  <props.ctx.ui.Button
+                    icon="trash"
+                    size="small"
+                    variant="ghost"
+                    busy={pending().has(`${kind()}:${row.key}`)}
+                    onClick={() => void removeInstalled(row.title)}
+                  >
+                    Remove
+                  </props.ctx.ui.Button>
+                </props.ctx.ui.SettingsRow>
+              )}
+            </For>
+          </Show>
         </Show>
       </props.ctx.ui.SettingsSection>
 
