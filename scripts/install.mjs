@@ -17,8 +17,7 @@ async function loadJsonc() {
     return await import("jsonc-parser")
   } catch {
     console.log("Installing the one runtime dependency…")
-    const npm = process.platform === "win32" ? "npm.cmd" : "npm"
-    const install = spawnSync(npm, ["install", "--omit=dev", "--legacy-peer-deps", "--no-audit", "--no-fund"], {
+    const install = npm(["install", "--omit=dev", "--legacy-peer-deps", "--no-audit", "--no-fund"], {
       cwd: root,
       stdio: "inherit",
     })
@@ -63,14 +62,13 @@ if (!existsSync(engine)) {
     )
   }
   console.log("Building the catalog engine for this platform…")
-  const npm = process.platform === "win32" ? "npm.cmd" : "npm"
-  const deps = spawnSync(npm, ["install", "--legacy-peer-deps", "--no-audit", "--no-fund"], {
+  const deps = npm(["install", "--legacy-peer-deps", "--no-audit", "--no-fund"], {
     cwd: root,
     stdio: "inherit",
   })
   if (deps.error) fail(`Could not run npm: ${deps.error.message}`)
   if (deps.status !== 0) fail("npm install failed.")
-  const build = spawnSync(npm, ["run", "build"], { cwd: root, stdio: "inherit" })
+  const build = npm(["run", "build"], { cwd: root, stdio: "inherit" })
   if (build.error) fail(`Could not run npm: ${build.error.message}`)
   if (build.status !== 0) fail("Building the catalog engine failed.")
 }
