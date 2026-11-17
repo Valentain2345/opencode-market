@@ -19,8 +19,19 @@ const PANEL: JSX.CSSProperties = {
   "border-radius": "6px",
   padding: "10px",
   "margin-top": "10px",
+  "max-width": "100%",
+  "box-sizing": "border-box",
 }
-const FIELD: JSX.CSSProperties = { flex: "1 1 160px", "min-width": "140px" }
+const FIELD: JSX.CSSProperties = { flex: "1 1 160px", "min-width": 0 }
+const FIELDS: JSX.CSSProperties = {
+  display: "grid",
+  gap: "8px",
+  "grid-template-columns": "repeat(2, minmax(0, 1fr))",
+  "align-items": "end",
+  "margin-bottom": "10px",
+  width: "100%",
+  "box-sizing": "border-box",
+}
 
 const MCP_DEFAULT = "https://registry.modelcontextprotocol.io/v0/servers"
 
@@ -392,7 +403,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
         <props.ctx.ui.SettingsSection
           title="Sources"
           footer={
-            <p style={{ ...MUTED, "font-size": "11px" }}>
+            <p style={{ ...MUTED, "font-size": "11px", "overflow-wrap": "anywhere" }}>
               {sourcesState()?.path ? `File: ${sourcesState()!.path}` : " "}
               <Show when={sourcesState()?.error}>
                 <br />
@@ -414,7 +425,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
                       <span style={{ ...MUTED, "font-size": "11px" }}>{SOURCE_LABEL[source.type as SourceType] ?? source.type}</span>
                     </span>
                   }
-                  description={<span style={{ "font-size": "11px" }}>{sourceTarget(source)}</span>}
+                  description={<span style={{ "font-size": "11px", "overflow-wrap": "anywhere" }}>{sourceTarget(source)}</span>}
                 >
                   <props.ctx.ui.Button icon="trash" size="small" variant="ghost" onClick={() => void dropSource(source.id)}>
                     Remove
@@ -439,12 +450,12 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
                 )}
               </For>
             </div>
-            <div style={BAR}>
+            <div style={FIELDS}>
               <div style={FIELD}>
                 <props.ctx.ui.TextInput value={sourceId()} onInput={setSourceId} label="Source id" placeholder="acme" />
               </div>
               <Show when={sourceType() === "catalog" || sourceType() === "mcp-registry"}>
-                <div style={{ ...FIELD, flex: "2 1 260px" }}>
+                <div style={FIELD}>
                   <props.ctx.ui.TextInput
                     value={sourceUrl()}
                     onInput={setSourceUrl}
@@ -469,6 +480,8 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
                   <props.ctx.ui.TextInput value={sourceRef()} onInput={setSourceRef} label="Branch" placeholder="main" />
                 </div>
               </Show>
+            </div>
+            <div style={{ display: "flex", "justify-content": "flex-end" }}>
               <props.ctx.ui.Button variant="contrast" size="small" busy={addingSource()} onClick={() => void submitSource()}>
                 Add source
               </props.ctx.ui.Button>

@@ -15,29 +15,29 @@ Requires Node.js 20+ and OpenCode Desktop 2.3+. Windows ships a prebuilt
 `market-core.exe` in `dist/`. Linux and macOS build the engine once during
 install, so they also need [Rust](https://rustup.rs).
 
+macOS and Linux:
+
 ```sh
-git clone https://github.com/Valentain2345/opencode-market
-cd opencode-market
+curl -fsSL https://raw.githubusercontent.com/Valentain2345/opencode-market/main/install.sh | sh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-.\install.ps1
+irm https://raw.githubusercontent.com/Valentain2345/opencode-market/main/install.ps1 | iex
 ```
 
-macOS and Linux:
+The one-liners download the latest copy to `~/.local/share/opencode-market`
+(`%LOCALAPPDATA%\opencode-market` on Windows) and register it. Run the same line
+again to update. To work from a checkout instead, clone the repo and run
+`./install.sh` or `.\install.ps1`.
 
-```sh
-./install.sh
-```
-
-The installer adds this checkout's absolute path to `plugins` in
+The installer adds the absolute path to `plugins` in
 `~/.config/opencode/opencode.jsonc`, keeps comments and formatting, and writes a
 one-time backup next to it. It is safe to run twice. Then reload OpenCode
 Desktop.
 
-To uninstall, remove that path from `plugins` and delete the checkout.
+To uninstall, remove that path from `plugins` and delete the install directory.
 
 ## Open it
 
