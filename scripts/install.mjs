@@ -12,6 +12,11 @@ function fail(message) {
   process.exit(1)
 }
 
+// Windows needs a shell to resolve npm.cmd.
+function npm(args, options = {}) {
+  return spawnSync("npm", args, { shell: true, ...options })
+}
+
 async function loadJsonc() {
   try {
     return await import("jsonc-parser")
