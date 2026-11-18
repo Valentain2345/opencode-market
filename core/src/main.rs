@@ -21,7 +21,7 @@ fn run(args: &[String]) -> Result<(), String> {
             let mut kind = None;
             let mut query = String::new();
             let mut refresh = false;
-            let mut limit = 300_usize;
+            let mut limit = 1000_usize;
             let mut path: Option<PathBuf> = None;
             let mut index = 1;
             while index < args.len() {
@@ -35,7 +35,7 @@ fn run(args: &[String]) -> Result<(), String> {
                         index += 2;
                     }
                     "--limit" => {
-                        limit = args.get(index + 1).and_then(|value| value.parse().ok()).unwrap_or(300);
+                        limit = args.get(index + 1).and_then(|value| value.parse().ok()).unwrap_or(1000);
                         index += 2;
                     }
                     "--sources" => {

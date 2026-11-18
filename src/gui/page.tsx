@@ -34,6 +34,7 @@ const FIELDS: JSX.CSSProperties = {
 }
 
 const MCP_DEFAULT = "https://registry.modelcontextprotocol.io/v0/servers"
+const PAGE_SIZE = 25
 
 function keyOf(kind: Kind, query: string): string {
   return `${kind}|${query}`
@@ -65,6 +66,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
   const [needsReload, setNeedsReload] = createSignal(false)
   const [reloading, setReloading] = createSignal(false)
   const [note, setNote] = createSignal("")
+  const [page, setPage] = createSignal(0)
 
   const [showSources, setShowSources] = createSignal(false)
   const [sourcesState, setSourcesState] = createSignal<SourcesState>()
@@ -126,6 +128,14 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
     void loadKind(target, search, false)
   })
 
+  // Any new view starts at its first page.
+  createEffect(() => {
+    kind()
+    query()
+    draft()
+    setPage(0)
+  })
+
   createEffect(() => {
     const types = SOURCE_TYPES[kind()]
     if (!types.includes(sourceType())) setSourceType(types[0] ?? "catalog")
@@ -157,13 +167,16 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
     return items.filter((item) => `${item.title} ${item.name} ${item.description}`.toLowerCase().includes(text))
   })
 
-  const installedRows = createMemo(() => {
-    const latest = state()
+  const installedRows = createMemo(() => {    const latest = state()
     if (!latest) return []
     if (kind() === "plugin") return latest.plugins.map((plugin) => ({ key: plugin.name, title: plugin.name, detail: plugin.spec }))
     if (kind() === "mcp") return latest.mcps.map((mcp) => ({ key: mcp.name, title: mcp.name, detail: `${mcp.type} · ${mcp.detail}` }))
     return latest.skills.map((skill) => ({ key: skill.name, title: skill.name, detail: skill.path }))
   })
+
+  const pageCount = createMemo(() => Math.max(1, Math.ceil(visible().length / PAGE_SIZE)))
+  const pageSafe = createMemo(() => Math.min(page(), pageCount() - 1))
+  const pageItems = createMemo(() => visible().slice(pageSafe() * PAGE_SIZE, (pageSafe() + 1) * PAGE_SIZE))
 
   async function act(item: Item, operation: "install" | "remove") {
     if (pending().has(item.id)) return
@@ -512,7 +525,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
             when={visible().length > 0}
             fallback={<p style={{ padding: "12px", ...MUTED }}>Nothing matched. Try a different search.</p>}
           >
-            <For each={visible().slice(0, 120)}>
+            <For each={pageItems()}>
               {(item) => (
                 <props.ctx.ui.SettingsRow
                   title={
@@ -567,6 +580,36 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
                 </props.ctx.ui.SettingsRow>
               )}
             </For>
+            <Show when={visible().length > PAGE_SIZE}>
+              <div style={{ ...BAR, "justify-content": "space-between", "margin-top": "10px" }}>
+                <span style={{ ...MUTED, "font-size": "11px" }}>
+                  {pageSafe() * PAGE_SIZE + 1}–{Math.min((pageSafe() + 1) * PAGE_SIZE, visible().length)} of {visible().length}
+                </span>
+                <div style={ROW}>
+                  <props.ctx.ui.Button
+                    size="small"
+                    variant="neutral"
+                    onClick={() => {
+                      if (pageSafe() > 0) setPage(pageSafe() - 1)
+                    }}
+                  >
+                    Previous
+                  </props.ctx.ui.Button>
+                  <span style={{ ...MUTED, "font-size": "11px" }}>
+                    Page {pageSafe() + 1} / {pageCount()}
+                  </span>
+                  <props.ctx.ui.Button
+                    size="small"
+                    variant="neutral"
+                    onClick={() => {
+                      if (pageSafe() + 1 < pageCount()) setPage(pageSafe() + 1)
+                    }}
+                  >
+                    Next
+                  </props.ctx.ui.Button>
+                </div>
+              </div>
+            </Show>
           </Show>
         </Show>
       </props.ctx.ui.SettingsSection>

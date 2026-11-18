@@ -111,7 +111,7 @@ import { join as join3 } from "node:path";
 
 // src/source-schema.ts
 var SOURCE_TYPES = {
-  plugin: ["npm", "github", "catalog"],
+  plugin: ["npm", "awesome", "github", "catalog"],
   mcp: ["mcp-registry", "github", "catalog"],
   skill: ["github-skills", "github", "catalog"]
 };
@@ -239,6 +239,7 @@ var REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 function defaultSources() {
   return [
     { id: "npm", kind: "plugin", type: "npm", enabled: true },
+    { id: "awesome", kind: "plugin", type: "awesome", enabled: true },
     {
       id: "mcp-registry",
       kind: "mcp",
@@ -252,6 +253,15 @@ function defaultSources() {
       type: "github-skills",
       enabled: true,
       repo: "anthropics/skills",
+      path: "skills",
+      ref: "main"
+    },
+    {
+      id: "vercel",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "vercel-labs/agent-skills",
       path: "skills",
       ref: "main"
     }

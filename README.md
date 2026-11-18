@@ -3,11 +3,11 @@
 A marketplace inside OpenCode Desktop for plugins, MCP servers and skills.
 Apache-2.0 licensed.
 
-| Kind | Default source | Install |
+| Kind | Default sources | Install |
 | --- | --- | --- |
-| Plugins | npm packages tagged `opencode-plugin` | official `opencode plugin add` |
+| Plugins | npm packages tagged `opencode-plugin`, [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode) | official `opencode plugin add` |
 | MCP servers | [official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp.servers.<slug>` in the global config |
-| Skills | [anthropics/skills](https://github.com/anthropics/skills) | `~/.config/opencode/skills/<name>/` |
+| Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) | `~/.config/opencode/skills/<name>/` |
 
 ## Install
 
@@ -47,13 +47,14 @@ To uninstall, remove that path from `plugins` and delete the install directory.
 
 Switching tabs and searching keeps the page in place: the last catalog for each
 tab stays on screen while the next one loads, and installs run concurrently.
+Results are paged, 25 at a time, so catalogs larger than 100 are fully reachable.
 MCP and skill changes apply as soon as they land. A new plugin gets a *Reload*
 banner instead of reloading the app automatically, so the page stays put.
 
 ## Sources
 
 The list lives in `~/.config/opencode/market.sources.json`. When the file is
-missing the three defaults below are used. Add and remove sources from the
+missing the five defaults below are used. Add and remove sources from the
 **Sources** panel on the page, or edit the file directly.
 
 ```json
@@ -61,6 +62,13 @@ missing the three defaults below are used. Add and remove sources from the
   "version": 1,
   "sources": [
     { "id": "npm", "kind": "plugin", "type": "npm", "enabled": true },
+    {
+      "id": "awesome",
+      "kind": "plugin",
+      "type": "awesome",
+      "enabled": true,
+      "url": "https://raw.githubusercontent.com/awesome-opencode/awesome-opencode/main/dist/registry.json"
+    },
     {
       "id": "mcp-registry",
       "kind": "mcp",
@@ -76,6 +84,15 @@ missing the three defaults below are used. Add and remove sources from the
       "repo": "anthropics/skills",
       "path": "skills",
       "ref": "main"
+    },
+    {
+      "id": "vercel",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "vercel-labs/agent-skills",
+      "path": "skills",
+      "ref": "main"
     }
   ]
 }
@@ -83,7 +100,7 @@ missing the three defaults below are used. Add and remove sources from the
 
 | Kind | Types |
 | --- | --- |
-| `plugin` | `npm`, `github` (a JSON file in a repo), `catalog` (any JSON URL) |
+| `plugin` | `npm`, `awesome` (an awesome-opencode registry JSON), `github` (a JSON file in a repo), `catalog` (any JSON URL) |
 | `mcp` | `mcp-registry`, `github`, `catalog` |
 | `skill` | `github-skills` (a directory of `SKILL.md` folders), `github`, `catalog` |
 

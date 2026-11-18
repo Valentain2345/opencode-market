@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 const NPM_SEARCH: &str = "https://registry.npmjs.org/-/v1/search";
+const AWESOME: &str = "https://raw.githubusercontent.com/awesome-opencode/awesome-opencode/main/dist/registry.json";
 const CACHE_TTL: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -196,6 +197,7 @@ pub fn run(kind: &str, query: &str, file: &SourcesFile, refresh: bool, limit: us
 fn fetch(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
     match source.kind_type.as_str() {
         "npm" => npm(source, http, query),
+        "awesome" => awesome(source, http, query),
         "mcp-registry" => mcp(source, http, query),
         "github-skills" => skills(source, http, query),
         "github" | "catalog" => custom(source, http, query),
@@ -227,7 +229,7 @@ fn npm(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
     } else {
         format!("keywords:opencode-plugin {}", query.trim())
     };
-    let data = http.json(&format!("{NPM_SEARCH}?text={}&size=100", enc(&text)))?;
+    let data = http.json(&format!("{NPM_SEARCH}?text={}&size=250", enc(&text)))?;
     let mut items = Vec::new();
     for object in data["objects"].as_array().into_iter().flatten() {
         let package = &object["package"];
@@ -271,6 +273,73 @@ fn downloads_label(downloads: u64) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Plugins: the curated awesome-opencode registry (installed from GitHub)
+// ---------------------------------------------------------------------------
+
+fn awesome(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
+    let url = source.url.as_deref().filter(|value| !value.is_empty()).unwrap_or(AWESOME);
+    let data = http.json(url)?;
+    let list = if let Some(list) = data.as_array() {
+        list.clone()
+    } else {
+        data["items"].as_array().cloned().unwrap_or_default()
+    };
+    let query = query.trim().to_lowercase();
+    let mut items = Vec::new();
+    for entry in list {
+        if text_of(&entry, "type") != "plugins" {
+            continue;
+        }
+        let repo = repo_slug(&text_of(&entry, "repoUrl"));
+        if repo.is_empty() {
+            continue;
+        }
+        let name = format!("github:{repo}");
+        let title = text_of(&entry, "displayName");
+        let title = if title.is_empty() { repo.clone() } else { title };
+        let mut description = text_of(&entry, "description");
+        if description.is_empty() {
+            description = text_of(&entry, "tagline");
+        }
+        let description = one_line(&description, 320);
+        let text = format!("{name} {title} {description}").to_lowercase();
+        if !query.is_empty() && !text.contains(&query) {
+            continue;
+        }
+        items.push(Item {
+            id: format!("plugin:{name}"),
+            kind: "plugin".into(),
+            name,
+            title,
+            description,
+            version: String::new(),
+            homepage: text_of(&entry, "repoUrl"),
+            meta: "awesome-opencode".into(),
+            url: None,
+            command: None,
+            source: source.id.clone(),
+            repo: Some(repo),
+            reference: Some("main".into()),
+            path: None,
+        });
+    }
+    Ok(items)
+}
+
+fn repo_slug(url: &str) -> String {
+    let Some(path) = url.trim_end_matches('/').strip_prefix("https://github.com/") else {
+        return String::new();
+    };
+    let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+    if parts.len() < 2 {
+        return String::new();
+    }
+    let repo = parts[1].trim_end_matches(".git");
+    let slug = format!("{}/{}", parts[0], repo);
+    if valid_repo(&slug) { slug } else { String::new() }
+}
+
+// ---------------------------------------------------------------------------
 // MCP servers: official registry (or a compatible one)
 // ---------------------------------------------------------------------------
 
@@ -282,7 +351,7 @@ fn mcp(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
         .unwrap_or(MCP_REGISTRY)
         .trim_end_matches('/');
     let search = query.trim();
-    let pages = if search.is_empty() { 4 } else { 1 };
+    let pages = if search.is_empty() { 6 } else { 1 };
     let mut servers = Vec::new();
     let mut seen = HashSet::new();
     let mut cursor: Option<String> = None;
@@ -688,6 +757,14 @@ mod tests {
         let output = CatalogOutput { items: vec![], errors: vec![], sources: vec![], fetched_at: 7 };
         let json = serde_json::to_string(&output).unwrap();
         assert!(json.contains("\"fetchedAt\":7"), "{json}");
+    }
+
+    #[test]
+    fn extracts_repo_slug_from_github_urls() {
+        assert_eq!(repo_slug("https://github.com/acme/plugin"), "acme/plugin");
+        assert_eq!(repo_slug("https://github.com/acme/plugin.git/"), "acme/plugin");
+        assert_eq!(repo_slug("https://example.com/acme/plugin"), "");
+        assert_eq!(repo_slug("https://github.com/acme"), "");
     }
 
     #[test]

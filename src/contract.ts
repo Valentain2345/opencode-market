@@ -40,6 +40,7 @@ export type Item = typeof Item.Type
 /** The adapters a source can use. */
 export const SourceType = Schema.Union([
   Schema.Literal("npm"),
+  Schema.Literal("awesome"),
   Schema.Literal("mcp-registry"),
   Schema.Literal("github-skills"),
   Schema.Literal("github"),

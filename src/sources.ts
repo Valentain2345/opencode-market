@@ -13,6 +13,7 @@ const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 export function defaultSources(): MarketSource[] {
   return [
     { id: "npm", kind: "plugin", type: "npm", enabled: true },
+    { id: "awesome", kind: "plugin", type: "awesome", enabled: true },
     {
       id: "mcp-registry",
       kind: "mcp",
@@ -26,6 +27,15 @@ export function defaultSources(): MarketSource[] {
       type: "github-skills",
       enabled: true,
       repo: "anthropics/skills",
+      path: "skills",
+      ref: "main",
+    },
+    {
+      id: "vercel",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "vercel-labs/agent-skills",
       path: "skills",
       ref: "main",
     },

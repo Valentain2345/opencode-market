@@ -65,6 +65,16 @@ pub fn defaults() -> SourcesFile {
                 reference: None,
             },
             Source {
+                id: "awesome".into(),
+                kind: "plugin".into(),
+                kind_type: "awesome".into(),
+                enabled: true,
+                url: None,
+                repo: None,
+                path: None,
+                reference: None,
+            },
+            Source {
                 id: "mcp-registry".into(),
                 kind: "mcp".into(),
                 kind_type: "mcp-registry".into(),
@@ -81,6 +91,16 @@ pub fn defaults() -> SourcesFile {
                 enabled: true,
                 url: None,
                 repo: Some("anthropics/skills".into()),
+                path: Some("skills".into()),
+                reference: Some("main".into()),
+            },
+            Source {
+                id: "vercel".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("vercel-labs/agent-skills".into()),
                 path: Some("skills".into()),
                 reference: Some("main".into()),
             },
@@ -122,7 +142,7 @@ mod tests {
     #[test]
     fn defaults_cover_every_kind() {
         let file = defaults();
-        assert_eq!(file.sources.len(), 3);
+        assert_eq!(file.sources.len(), 5);
         for kind in ["plugin", "mcp", "skill"] {
             assert!(file.sources.iter().any(|source| source.kind == kind));
         }
