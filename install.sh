@@ -20,9 +20,11 @@ fi
 target=${OPENCODE_MARKET_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/opencode-market}
 archive=https://github.com/Valentain2345/opencode-market/archive/refs/heads/main.tar.gz
 tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
+archive_file="$tmp.tar.gz"
+trap 'rm -rf "$tmp" "$archive_file"' EXIT
 echo "Downloading $archive"
-curl -fsSL "$archive" | tar -xz -C "$tmp"
+curl -fsSL "$archive" -o "$archive_file"
+tar -xzf "$archive_file" -C "$tmp"
 mkdir -p "$target"
 cp -R "$tmp/opencode-market-main/." "$target/"
 exec node "$target/scripts/install.mjs" "$@"
