@@ -17,7 +17,7 @@ import {
 
 // plugin add and editConfig both read-modify-write the same global config, so those mutations run one at a time.
 let configQueue: Promise<unknown> = Promise.resolve()
-function serial<T>(task: () => Promise<T>): Promise<T> {
+export function serial<T>(task: () => Promise<T>): Promise<T> {
   const next = configQueue.then(task, task)
   configQueue = next.then(
     () => undefined,

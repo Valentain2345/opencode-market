@@ -7,7 +7,7 @@ Apache-2.0 licensed.
 | --- | --- | --- |
 | Plugins | npm packages tagged `opencode-plugin`, [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode) | official `opencode plugin add` |
 | MCP servers | [official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp.servers.<slug>` in the global config |
-| Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills) | `~/.config/opencode/skills/<name>/` |
+| Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills), [sickn33/agentic-awesome-skills](https://github.com/sickn33/agentic-awesome-skills), [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills), [obra/superpowers](https://github.com/obra/superpowers), [wshobson/agents](https://github.com/wshobson/agents) | `~/.config/opencode/skills/<name>/` |
 
 ## Install
 
@@ -54,7 +54,7 @@ banner instead of reloading the app automatically, so the page stays put.
 ## Sources
 
 The list lives in `~/.config/opencode/market.sources.json`. When the file is
-missing the five defaults below are used. Add and remove sources from the
+missing the defaults below are used. Add and remove sources from the
 **Sources** panel on the page, or edit the file directly.
 
 ```json
@@ -93,6 +93,42 @@ missing the five defaults below are used. Add and remove sources from the
       "repo": "vercel-labs/agent-skills",
       "path": "skills",
       "ref": "main"
+    },
+    {
+      "id": "agentic-awesome",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "sickn33/agentic-awesome-skills",
+      "path": "skills_index.json",
+      "ref": "main"
+    },
+    {
+      "id": "claude-skills",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "alirezarezvani/claude-skills",
+      "path": ".gemini/skills",
+      "ref": "main"
+    },
+    {
+      "id": "superpowers",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "obra/superpowers",
+      "path": "skills",
+      "ref": "main"
+    },
+    {
+      "id": "wshobson",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "wshobson/agents",
+      "path": "plugins",
+      "ref": "main"
     }
   ]
 }
@@ -106,7 +142,8 @@ missing the five defaults below are used. Add and remove sources from the
 
 - `github` and `github-skills` need `repo` as `owner/name`; `github` also needs
   the JSON `path`; `github-skills` defaults `path` to the repo root and `ref` to
-  `main`.
+  `main`. `github-skills` scans nested `SKILL.md` folders, and reads a JSON
+  index instead when `path` ends in `.json` (`[{ name, path, description }]`).
 - `catalog` and `mcp-registry` need a full http(s) `url`.
 - Custom JSON may be an array or `{ "items": [] }` / `{ "plugins": [] }` /
   `{ "mcps": [] }` / `{ "skills": [] }` / `{ "servers": [] }`. Common field

@@ -27,7 +27,7 @@ function installed(item: CoreItem, index: InstalledIndex): boolean {
 }
 
 /** The Rust engine reads the sources file, fetches in parallel and caches answers. */
-export async function catalog(kind: Kind, query: string, force: boolean, index: InstalledIndex): Promise<CatalogResult> {
+export async function catalog(kind: Kind, query: string, force: boolean, index: InstalledIndex, all = false): Promise<CatalogResult> {
   const dir = globalConfigDir()
   try {
     readSources(dir) // Fail here with a readable message before starting the engine.
@@ -40,6 +40,7 @@ export async function catalog(kind: Kind, query: string, force: boolean, index: 
       "--sources",
       sourcesPath(dir),
       ...(force ? ["--refresh"] : []),
+      ...(all ? ["--limit", "0"] : []),
     ])
     return {
       items: output.items.map((item) => ({ ...item, installed: installed(item, index) })),

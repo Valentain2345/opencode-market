@@ -116,10 +116,18 @@ export const CatalogQuery = Schema.Struct({
   query: Schema.String,
   /** Skip the in-memory cache and hit the network. */
   force: Schema.Boolean,
+  /** Return every result instead of the engine's default cap. */
+  all: Schema.optional(Schema.Boolean),
 })
 
 export const MutateInput = Schema.Struct({
   item: Item,
+})
+
+export const ScaffoldInput = Schema.Struct({
+  name: Schema.String,
+  /** Folder to create; defaults to `<config dir>/plugins/<id>`. */
+  dir: Schema.optional(Schema.String),
 })
 
 export const MutationResult = Schema.Struct({
@@ -136,6 +144,7 @@ export type MarketState = typeof MarketState.Type
 export type CatalogResult = typeof CatalogResult.Type
 export type CatalogQuery = typeof CatalogQuery.Type
 export type MutateInput = typeof MutateInput.Type
+export type ScaffoldInput = typeof ScaffoldInput.Type
 export type MutationResult = typeof MutationResult.Type
 
 /** The bridge between the marketplace page and the desktop app's main process. */
@@ -147,6 +156,7 @@ export const Market = Ipc.define({
     install: { input: MutateInput, output: MutationResult },
     remove: { input: MutateInput, output: MutationResult },
     reload: { output: MutationResult },
+    scaffold: { input: ScaffoldInput, output: MutationResult },
     sources: { output: SourcesState },
     addSource: { input: AddSourceInput, output: SourcesState },
     removeSource: { input: RemoveSourceInput, output: SourcesState },

@@ -26,7 +26,10 @@ pub struct Source {
 
 impl Source {
     pub fn reference(&self) -> &str {
-        self.reference.as_deref().filter(|value| !value.is_empty()).unwrap_or("main")
+        self.reference
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .unwrap_or("main")
     }
 
     pub fn path(&self) -> &str {
@@ -104,6 +107,46 @@ pub fn defaults() -> SourcesFile {
                 path: Some("skills".into()),
                 reference: Some("main".into()),
             },
+            Source {
+                id: "agentic-awesome".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("sickn33/agentic-awesome-skills".into()),
+                path: Some("skills_index.json".into()),
+                reference: Some("main".into()),
+            },
+            Source {
+                id: "claude-skills".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("alirezarezvani/claude-skills".into()),
+                path: Some(".gemini/skills".into()),
+                reference: Some("main".into()),
+            },
+            Source {
+                id: "superpowers".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("obra/superpowers".into()),
+                path: Some("skills".into()),
+                reference: Some("main".into()),
+            },
+            Source {
+                id: "wshobson".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("wshobson/agents".into()),
+                path: Some("plugins".into()),
+                reference: Some("main".into()),
+            },
         ],
     }
 }
@@ -131,7 +174,8 @@ pub fn load(path: Option<&Path>) -> Result<SourcesFile, String> {
         return Ok(defaults());
     }
     let text = fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
-    let file: SourcesFile = serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
+    let file: SourcesFile =
+        serde_json::from_str(&text).map_err(|error| format!("{}: {error}", path.display()))?;
     Ok(file)
 }
 
@@ -142,7 +186,7 @@ mod tests {
     #[test]
     fn defaults_cover_every_kind() {
         let file = defaults();
-        assert_eq!(file.sources.len(), 5);
+        assert_eq!(file.sources.len(), 9);
         for kind in ["plugin", "mcp", "skill"] {
             assert!(file.sources.iter().any(|source| source.kind == kind));
         }

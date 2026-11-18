@@ -9,7 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 const NPM_SEARCH: &str = "https://registry.npmjs.org/-/v1/search";
-const AWESOME: &str = "https://raw.githubusercontent.com/awesome-opencode/awesome-opencode/main/dist/registry.json";
+const AWESOME: &str =
+    "https://raw.githubusercontent.com/awesome-opencode/awesome-opencode/main/dist/registry.json";
 const CACHE_TTL: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -61,11 +62,18 @@ impl Http {
         if let Some(dir) = &cache {
             let _ = fs::create_dir_all(dir);
         }
-        Ok(Self { client, cache, refresh })
+        Ok(Self {
+            client,
+            cache,
+            refresh,
+        })
     }
 
     fn text(&self, url: &str) -> Result<String, String> {
-        let file = self.cache.as_ref().map(|dir| dir.join(format!("{:016x}.txt", fnv(url))));
+        let file = self
+            .cache
+            .as_ref()
+            .map(|dir| dir.join(format!("{:016x}.txt", fnv(url))));
         if !self.refresh {
             if let Some(file) = &file {
                 if fresh(file) {
@@ -85,7 +93,9 @@ impl Http {
         if !status.is_success() {
             return Err(format!("{status} · {url}"));
         }
-        let text = response.text().map_err(|error| format!("{error} · {url}"))?;
+        let text = response
+            .text()
+            .map_err(|error| format!("{error} · {url}"))?;
         if let Some(file) = &file {
             // shortcut: cache writes race without locking; a lost write only costs a refetch.
             let temp = file.with_extension(format!("{}.tmp", std::process::id()));
@@ -120,7 +130,9 @@ fn cache_dir() -> Option<PathBuf> {
             return Some(PathBuf::from(value).join("opencode-market"));
         }
     }
-    env::var("HOME").ok().map(|home| PathBuf::from(home).join(".cache").join("opencode-market"))
+    env::var("HOME")
+        .ok()
+        .map(|home| PathBuf::from(home).join(".cache").join("opencode-market"))
 }
 
 fn fresh(path: &Path) -> bool {
@@ -142,7 +154,13 @@ fn fnv(text: &str) -> u64 {
 }
 
 /// Public catalog for one kind. Sources run in parallel; one failing source does not hide the rest.
-pub fn run(kind: &str, query: &str, file: &SourcesFile, refresh: bool, limit: usize) -> Result<CatalogOutput, String> {
+pub fn run(
+    kind: &str,
+    query: &str,
+    file: &SourcesFile,
+    refresh: bool,
+    limit: usize,
+) -> Result<CatalogOutput, String> {
     let http = Arc::new(Http::new(refresh)?);
     let enabled: Vec<Source> = file
         .sources
@@ -165,12 +183,16 @@ pub fn run(kind: &str, query: &str, file: &SourcesFile, refresh: bool, limit: us
             .map(|source| {
                 let http = Arc::clone(&http);
                 let query = query.to_string();
-                scope.spawn(move || fetch(&source, &http, &query))
+                scope.spawn(move || fetch(&source, &http, &query, limit))
             })
             .collect();
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap_or_else(|_| Err("source thread panicked".into())))
+            .map(|handle| {
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err("source thread panicked".into()))
+            })
             .collect()
     });
 
@@ -194,9 +216,9 @@ pub fn run(kind: &str, query: &str, file: &SourcesFile, refresh: bool, limit: us
     })
 }
 
-fn fetch(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
+fn fetch(source: &Source, http: &Http, query: &str, limit: usize) -> Result<Vec<Item>, String> {
     match source.kind_type.as_str() {
-        "npm" => npm(source, http, query),
+        "npm" => npm(source, http, query, limit),
         "awesome" => awesome(source, http, query),
         "mcp-registry" => mcp(source, http, query),
         "github-skills" => skills(source, http, query),
@@ -223,43 +245,73 @@ fn merge(items: Vec<Item>, limit: usize) -> Vec<Item> {
 // Plugins: npm packages tagged `opencode-plugin`
 // ---------------------------------------------------------------------------
 
-fn npm(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
+fn npm(source: &Source, http: &Http, query: &str, limit: usize) -> Result<Vec<Item>, String> {
     let text = if query.trim().is_empty() {
         "keywords:opencode-plugin".to_string()
     } else {
         format!("keywords:opencode-plugin {}", query.trim())
     };
-    let data = http.json(&format!("{NPM_SEARCH}?text={}&size=250", enc(&text)))?;
     let mut items = Vec::new();
-    for object in data["objects"].as_array().into_iter().flatten() {
-        let package = &object["package"];
-        let name = text_of(package, "name");
-        let version = text_of(package, "version");
-        if name.is_empty() || version.is_empty() {
-            continue;
+    let mut seen = HashSet::new();
+    for page in 0..100usize {
+        let url = format!(
+            "{NPM_SEARCH}?text={}&size=250&from={}",
+            enc(&text),
+            page * 250
+        );
+        let data = {
+            let mut tries = 0;
+            loop {
+                match http.json(&url) {
+                    Ok(data) => break data,
+                    Err(error) if error.contains("429") && tries < 3 => {
+                        tries += 1;
+                        std::thread::sleep(Duration::from_secs(2 * tries as u64));
+                    }
+                    Err(error) => return Err(error),
+                }
+            }
+        };
+        if query.trim().is_empty() {
+            std::thread::sleep(Duration::from_millis(700));
         }
-        let downloads = object["downloads"]["weekly"].as_u64().unwrap_or(0);
-        let homepage = ["homepage", "repository", "npm"]
-            .iter()
-            .map(|key| text_of(&package["links"], key))
-            .find(|value| !value.is_empty())
-            .unwrap_or_else(|| format!("https://www.npmjs.com/package/{name}"));
-        items.push(Item {
-            id: format!("plugin:{name}"),
-            kind: "plugin".into(),
-            name: name.clone(),
-            title: name,
-            description: one_line(&text_of(package, "description"), 320),
-            version,
-            homepage,
-            meta: format!("npm · {}", downloads_label(downloads)),
-            url: None,
-            command: None,
-            source: source.id.clone(),
-            repo: None,
-            reference: None,
-            path: None,
-        });
+        let objects = data["objects"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+        if objects.is_empty() {
+            break;
+        }
+        for object in objects {
+            let package = &object["package"];
+            let name = text_of(package, "name");
+            let version = text_of(package, "version");
+            if name.is_empty() || version.is_empty() || !seen.insert(name.clone()) {
+                continue;
+            }
+            let downloads = object["downloads"]["weekly"].as_u64().unwrap_or(0);
+            let homepage = ["homepage", "repository", "npm"]
+                .iter()
+                .map(|key| text_of(&package["links"], key))
+                .find(|value| !value.is_empty())
+                .unwrap_or_else(|| format!("https://www.npmjs.com/package/{name}"));
+            items.push(Item {
+                id: format!("plugin:{name}"),
+                kind: "plugin".into(),
+                name: name.clone(),
+                title: name,
+                description: one_line(&text_of(package, "description"), 320),
+                version,
+                homepage,
+                meta: format!("npm · {}", downloads_label(downloads)),
+                url: None,
+                command: None,
+                source: source.id.clone(),
+                repo: None,
+                reference: None,
+                path: None,
+            });
+        }
+        if !query.trim().is_empty() || objects.len() < 250 || (limit > 0 && items.len() >= limit) {
+            break;
+        }
     }
     Ok(items)
 }
@@ -277,7 +329,11 @@ fn downloads_label(downloads: u64) -> String {
 // ---------------------------------------------------------------------------
 
 fn awesome(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
-    let url = source.url.as_deref().filter(|value| !value.is_empty()).unwrap_or(AWESOME);
+    let url = source
+        .url
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(AWESOME);
     let data = http.json(url)?;
     let list = if let Some(list) = data.as_array() {
         list.clone()
@@ -296,7 +352,11 @@ fn awesome(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, Strin
         }
         let name = format!("github:{repo}");
         let title = text_of(&entry, "displayName");
-        let title = if title.is_empty() { repo.clone() } else { title };
+        let title = if title.is_empty() {
+            repo.clone()
+        } else {
+            title
+        };
         let mut description = text_of(&entry, "description");
         if description.is_empty() {
             description = text_of(&entry, "tagline");
@@ -327,7 +387,10 @@ fn awesome(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, Strin
 }
 
 fn repo_slug(url: &str) -> String {
-    let Some(path) = url.trim_end_matches('/').strip_prefix("https://github.com/") else {
+    let Some(path) = url
+        .trim_end_matches('/')
+        .strip_prefix("https://github.com/")
+    else {
         return String::new();
     };
     let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
@@ -336,7 +399,11 @@ fn repo_slug(url: &str) -> String {
     }
     let repo = parts[1].trim_end_matches(".git");
     let slug = format!("{}/{}", parts[0], repo);
-    if valid_repo(&slug) { slug } else { String::new() }
+    if valid_repo(&slug) {
+        slug
+    } else {
+        String::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -351,7 +418,7 @@ fn mcp(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
         .unwrap_or(MCP_REGISTRY)
         .trim_end_matches('/');
     let search = query.trim();
-    let pages = if search.is_empty() { 6 } else { 1 };
+    let pages = if search.is_empty() { 40 } else { 1 };
     let mut servers = Vec::new();
     let mut seen = HashSet::new();
     let mut cursor: Option<String> = None;
@@ -390,22 +457,38 @@ fn mcp(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
             .flatten()
             .find(|entry| entry["type"].as_str() == Some("streamable-http"))
             .or_else(|| server["remotes"].as_array().and_then(|list| list.first()));
-        let remote_url = remote.and_then(|entry| entry["url"].as_str()).filter(|value| !value.is_empty());
+        let remote_url = remote
+            .and_then(|entry| entry["url"].as_str())
+            .filter(|value| !value.is_empty());
         let package = server["packages"]
             .as_array()
             .into_iter()
             .flatten()
-            .find(|entry| entry["registryType"].as_str() == Some("npm") && !text_of(entry, "identifier").is_empty());
+            .find(|entry| {
+                entry["registryType"].as_str() == Some("npm")
+                    && !text_of(entry, "identifier").is_empty()
+            });
         if remote_url.is_none() && package.is_none() {
             continue;
         }
-        let identifier = package.map(|entry| text_of(entry, "identifier")).unwrap_or_default();
-        let version = package.map(|entry| text_of(entry, "version")).unwrap_or_default();
+        let identifier = package
+            .map(|entry| text_of(entry, "identifier"))
+            .unwrap_or_default();
+        let version = package
+            .map(|entry| text_of(entry, "version"))
+            .unwrap_or_default();
         let command = if remote_url.is_none() && !identifier.is_empty() {
             Some(vec![
                 "npx".to_string(),
                 "-y".to_string(),
-                format!("{identifier}@{}", if version.is_empty() { "latest" } else { &version }),
+                format!(
+                    "{identifier}@{}",
+                    if version.is_empty() {
+                        "latest"
+                    } else {
+                        &version
+                    }
+                ),
             ])
         } else {
             None
@@ -460,7 +543,8 @@ fn host_of(url: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Skills: any GitHub repository with `<path>/<name>/SKILL.md`
+// Skills: any GitHub repository with `<path>/<name>/SKILL.md`, or a JSON
+// index at `<path>` listing `{name, path, description}` entries.
 // ---------------------------------------------------------------------------
 
 #[derive(Default, Clone)]
@@ -470,92 +554,214 @@ struct Front {
 }
 
 fn skills(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
-    let repo = source.repo.as_deref().filter(|value| valid_repo(value)).ok_or("github-skills source needs a valid repo (owner/name)")?;
-    let reference = source.reference();
-    let base = source.path();
-    let prefix = if base.is_empty() { String::new() } else { format!("{base}/") };
+    let repo = source
+        .repo
+        .as_deref()
+        .filter(|value| valid_repo(value))
+        .ok_or("github-skills source needs a valid repo (owner/name)")?;
+    let reference = source.reference().to_string();
+    let base = source.path().to_string();
+    skills_at(source, http, query, repo, &reference, &base)
+}
+
+fn skills_at(
+    source: &Source,
+    http: &Http,
+    query: &str,
+    repo: &str,
+    reference: &str,
+    base: &str,
+) -> Result<Vec<Item>, String> {
+    if base.ends_with(".json") {
+        return skill_index(source, http, query, repo, reference, base);
+    }
+    let prefix = if base.is_empty() {
+        String::new()
+    } else {
+        format!("{base}/")
+    };
     let tree = http.json(&format!(
         "https://api.github.com/repos/{repo}/git/trees/{}?recursive=1",
         enc(reference)
     ))?;
     let entries: Vec<Value> = tree["tree"].as_array().cloned().unwrap_or_default();
 
-    let mut names = BTreeMap::new();
-    for entry in &entries {
-        if entry["type"].as_str() != Some("blob") {
-            continue;
-        }
-        let path = match entry["path"].as_str() {
-            Some(path) => path,
-            None => continue,
-        };
-        let rest = match path.strip_prefix(&prefix) {
-            Some(rest) => rest,
-            None => continue,
-        };
-        if let Some(name) = rest.strip_suffix("/SKILL.md") {
-            if !name.is_empty() && !name.contains('/') {
-                names.insert(name.to_string(), 0_usize);
-            }
-        }
-    }
-    let dir_names: Vec<String> = names.keys().cloned().collect();
+    // Directory of each SKILL.md, plus how many files ship with it.
+    let mut dirs: BTreeMap<String, usize> = BTreeMap::new();
     for entry in &entries {
         if entry["type"].as_str() != Some("blob") {
             continue;
         }
         if let Some(path) = entry["path"].as_str() {
-            for name in &dir_names {
-                if path.starts_with(&format!("{prefix}{name}/")) {
-                    *names.get_mut(name).unwrap() += 1;
+            if let Some(parent) = path.strip_suffix("/SKILL.md") {
+                if path.starts_with(&prefix) {
+                    dirs.insert(parent.to_string(), 0);
                 }
+            }
+        }
+    }
+    for entry in &entries {
+        if entry["type"].as_str() != Some("blob") {
+            continue;
+        }
+        let Some(path) = entry["path"].as_str() else {
+            continue;
+        };
+        let mut cursor = path;
+        while let Some(cut) = cursor.rfind('/') {
+            cursor = &cursor[..cut];
+            if let Some(count) = dirs.get_mut(cursor) {
+                *count += 1;
+                break;
             }
         }
     }
 
     let query = query.trim().to_lowercase();
-    let fronts: Vec<(String, Front, usize)> = std::thread::scope(|scope| {
-        let handles: Vec<_> = names
-            .iter()
-            .map(|(name, count)| {
-                let url = format!(
-                    "https://raw.githubusercontent.com/{repo}/{}/{prefix}{name}/SKILL.md",
-                    enc(reference)
-                );
-                scope.spawn(move || (name.clone(), frontmatter(&http.text(&url).unwrap_or_default()), *count))
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|handle| handle.join().unwrap_or_else(|_| (String::new(), Front::default(), 0)))
-            .collect()
-    });
+    let dirs: Vec<(String, usize)> = dirs.into_iter().collect();
+    let mut fronts: Vec<(String, Front, usize)> = Vec::new();
+    for chunk in dirs.chunks(32) {
+        let batch: Vec<_> = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|(parent, count)| {
+                    let url = format!(
+                        "https://raw.githubusercontent.com/{repo}/{}/{parent}/SKILL.md",
+                        enc(reference)
+                    );
+                    let parent = parent.clone();
+                    let count = *count;
+                    scope.spawn(move || {
+                        (
+                            parent,
+                            frontmatter(&http.text(&url).unwrap_or_default()),
+                            count,
+                        )
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|_| (String::new(), Front::default(), 0))
+                })
+                .collect()
+        });
+        fronts.extend(batch);
+    }
 
     let mut items = Vec::new();
-    for (name, front, count) in fronts {
-        let title = if front.name.is_empty() { name.clone() } else { front.name };
+    for (parent, front, count) in fronts {
+        let Some(leaf) = parent.rsplit('/').next() else {
+            continue;
+        };
+        if leaf.is_empty() {
+            continue;
+        }
+        let skill_base = parent.rsplit_once('/').map(|(base, _)| base).unwrap_or("");
+        let title = if front.name.is_empty() {
+            leaf.to_string()
+        } else {
+            front.name
+        };
         let description = one_line(&front.description, 320);
-        if !query.is_empty() && !format!("{name} {title} {description}").to_lowercase().contains(&query) {
+        if !query.is_empty()
+            && !format!("{parent} {title} {description}")
+                .to_lowercase()
+                .contains(&query)
+        {
             continue;
         }
         items.push(Item {
-            id: format!("skill:{name}"),
+            id: format!("skill:{leaf}"),
             kind: "skill".into(),
-            name: name.clone(),
+            name: leaf.to_string(),
             title,
             description,
             version: String::new(),
-            homepage: format!("https://github.com/{repo}/tree/{reference}/{prefix}{name}"),
+            homepage: format!("https://github.com/{repo}/tree/{reference}/{parent}"),
             meta: format!("github · {repo} · {count} files"),
             url: None,
             command: None,
             source: source.id.clone(),
             repo: Some(repo.to_string()),
             reference: Some(reference.to_string()),
-            path: Some(base.to_string()),
+            path: Some(skill_base.to_string()),
         });
     }
+    items.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(items)
+}
+
+fn skill_dir(path: &str) -> Option<(&str, &str, &str)> {
+    let parent = path.strip_suffix("/SKILL.md").unwrap_or(path);
+    let (base, leaf) = parent.rsplit_once('/')?;
+    if base.is_empty() || leaf.is_empty() {
+        return None;
+    }
+    Some((parent, base, leaf))
+}
+
+fn skill_index(
+    source: &Source,
+    http: &Http,
+    query: &str,
+    repo: &str,
+    reference: &str,
+    index: &str,
+) -> Result<Vec<Item>, String> {
+    let url = format!(
+        "https://raw.githubusercontent.com/{repo}/{}/{index}",
+        enc(reference)
+    );
+    let data = http.json(&url)?;
+    let list = data
+        .as_array()
+        .cloned()
+        .or_else(|| data["skills"].as_array().cloned())
+        .unwrap_or_default();
+    let query = query.trim().to_lowercase();
+    let mut items = BTreeMap::new();
+    for entry in &list {
+        let path = text_of(entry, "path");
+        let path = path.trim_matches('/');
+        let Some((parent, skill_base, leaf)) = skill_dir(path) else {
+            continue;
+        };
+        let name = text_of(entry, "name");
+        let title = if name.is_empty() {
+            leaf.to_string()
+        } else {
+            name
+        };
+        let description = one_line(&text_of(entry, "description"), 320);
+        if !query.is_empty()
+            && !format!("{parent} {title} {description}")
+                .to_lowercase()
+                .contains(&query)
+        {
+            continue;
+        }
+        items.entry(leaf.to_string()).or_insert_with(|| Item {
+            id: format!("skill:{leaf}"),
+            kind: "skill".into(),
+            name: leaf.to_string(),
+            title,
+            description,
+            version: String::new(),
+            homepage: format!("https://github.com/{repo}/tree/{reference}/{parent}"),
+            meta: format!("github · {repo} · index"),
+            url: None,
+            command: None,
+            source: source.id.clone(),
+            repo: Some(repo.to_string()),
+            reference: Some(reference.to_string()),
+            path: Some(skill_base.to_string()),
+        });
+    }
+    Ok(items.into_values().collect())
 }
 
 fn valid_repo(repo: &str) -> bool {
@@ -564,11 +770,20 @@ fn valid_repo(repo: &str) -> bool {
         (Some(owner), Some(name), None) => (owner, name),
         _ => return false,
     };
-    let starts_ok = |value: &str| value.chars().next().is_some_and(|c| c.is_ascii_alphanumeric());
+    let starts_ok = |value: &str| {
+        value
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_alphanumeric())
+    };
     starts_ok(owner)
         && starts_ok(name)
-        && owner.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && owner
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
 }
 
 fn frontmatter(text: &str) -> Front {
@@ -592,7 +807,11 @@ fn frontmatter(text: &str) -> Front {
             if matches!(value, ">" | "|" | ">-" | "|-") {
                 let mut parts = Vec::new();
                 index += 1;
-                while index < body.len() && (body[index].starts_with(' ') || body[index].starts_with('\t') || body[index].trim().is_empty()) {
+                while index < body.len()
+                    && (body[index].starts_with(' ')
+                        || body[index].starts_with('\t')
+                        || body[index].trim().is_empty())
+                {
                     let part = body[index].trim();
                     if !part.is_empty() {
                         parts.push(part.to_string());
@@ -610,7 +829,11 @@ fn frontmatter(text: &str) -> Front {
 }
 
 fn unquote(value: &str) -> String {
-    value.trim().trim_matches('"').trim_matches('\'').to_string()
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -619,14 +842,25 @@ fn unquote(value: &str) -> String {
 
 fn custom(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String> {
     let url = if source.kind_type == "github" {
-        let repo = source.repo.as_deref().filter(|value| valid_repo(value)).ok_or("github source needs a valid repo (owner/name)")?;
+        let repo = source
+            .repo
+            .as_deref()
+            .filter(|value| valid_repo(value))
+            .ok_or("github source needs a valid repo (owner/name)")?;
         let path = source.path().trim_start_matches('/');
         if path.is_empty() {
             return Err("github source needs a path to a JSON file".into());
         }
-        format!("https://raw.githubusercontent.com/{repo}/{}/{path}", enc(source.reference()))
+        format!(
+            "https://raw.githubusercontent.com/{repo}/{}/{path}",
+            enc(source.reference())
+        )
     } else {
-        source.url.clone().filter(|value| !value.is_empty()).ok_or("catalog source needs a url")?
+        source
+            .url
+            .clone()
+            .filter(|value| !value.is_empty())
+            .ok_or("catalog source needs a url")?
     };
 
     let data = http.json(&url)?;
@@ -642,29 +876,61 @@ fn custom(source: &Source, http: &Http, query: &str) -> Result<Vec<Item>, String
     let query = query.trim().to_lowercase();
     let mut items = Vec::new();
     for entry in list {
-        let name = first_text(&entry, &["name", "package", "npm", "identifier", "productId", "id"]);
+        let name = first_text(
+            &entry,
+            &["name", "package", "npm", "identifier", "productId", "id"],
+        );
         if name.is_empty() {
             continue;
         }
         let title = first_text(&entry, &["title", "displayName", "name"]);
-        let title = if title.is_empty() { name.clone() } else { title };
+        let title = if title.is_empty() {
+            name.clone()
+        } else {
+            title
+        };
         let description = one_line(&first_text(&entry, &["description", "tagline"]), 320);
-        let homepage = [first_text(&entry, &["homepage", "homepageUrl", "repoUrl", "repository", "website"])]
-            .into_iter()
-            .find(|value| !value.is_empty())
-            .unwrap_or_else(|| url.clone());
+        let homepage = [first_text(
+            &entry,
+            &[
+                "homepage",
+                "homepageUrl",
+                "repoUrl",
+                "repository",
+                "website",
+            ],
+        )]
+        .into_iter()
+        .find(|value| !value.is_empty())
+        .unwrap_or_else(|| url.clone());
         let remote = first_text(&entry, &["url", "remote", "endpoint"]);
-        let remote = if remote.is_empty() { None } else { Some(remote) };
+        let remote = if remote.is_empty() {
+            None
+        } else {
+            Some(remote)
+        };
         let command = command_of(&entry["command"]);
         if source.kind == "mcp" && remote.is_none() && command.is_none() {
             continue;
         }
         let repo = first_text(&entry, &["repo"]);
-        let repo = if repo.is_empty() { source.repo.clone() } else { Some(repo) };
+        let repo = if repo.is_empty() {
+            source.repo.clone()
+        } else {
+            Some(repo)
+        };
         let path = first_text(&entry, &["path"]);
-        let path = if path.is_empty() { source.path.clone() } else { Some(path) };
+        let path = if path.is_empty() {
+            source.path.clone()
+        } else {
+            Some(path)
+        };
         let reference = first_text(&entry, &["ref", "branch"]);
-        let reference = if reference.is_empty() { source.reference.clone() } else { Some(reference) };
+        let reference = if reference.is_empty() {
+            source.reference.clone()
+        } else {
+            Some(reference)
+        };
         let text = format!("{name} {title} {description}").to_lowercase();
         if !query.is_empty() && !text.contains(&query) {
             continue;
@@ -703,7 +969,10 @@ fn first_text(value: &Value, keys: &[&str]) -> String {
 
 fn command_of(value: &Value) -> Option<Vec<String>> {
     let parts: Vec<String> = match value {
-        Value::Array(list) => list.iter().filter_map(|entry| entry.as_str().map(str::to_string)).collect(),
+        Value::Array(list) => list
+            .iter()
+            .filter_map(|entry| entry.as_str().map(str::to_string))
+            .collect(),
         Value::String(line) => line.split_whitespace().map(str::to_string).collect(),
         _ => Vec::new(),
     };
@@ -754,7 +1023,12 @@ mod tests {
 
     #[test]
     fn catalog_output_serializes_fetched_at_as_camel_case() {
-        let output = CatalogOutput { items: vec![], errors: vec![], sources: vec![], fetched_at: 7 };
+        let output = CatalogOutput {
+            items: vec![],
+            errors: vec![],
+            sources: vec![],
+            fetched_at: 7,
+        };
         let json = serde_json::to_string(&output).unwrap();
         assert!(json.contains("\"fetchedAt\":7"), "{json}");
     }
@@ -762,7 +1036,10 @@ mod tests {
     #[test]
     fn extracts_repo_slug_from_github_urls() {
         assert_eq!(repo_slug("https://github.com/acme/plugin"), "acme/plugin");
-        assert_eq!(repo_slug("https://github.com/acme/plugin.git/"), "acme/plugin");
+        assert_eq!(
+            repo_slug("https://github.com/acme/plugin.git/"),
+            "acme/plugin"
+        );
         assert_eq!(repo_slug("https://example.com/acme/plugin"), "");
         assert_eq!(repo_slug("https://github.com/acme"), "");
     }
@@ -782,8 +1059,14 @@ mod tests {
     #[test]
     fn latest_flags_filter_status_and_versions() {
         let active: Value = serde_json::from_str(r#"{"_meta":{"io.modelcontextprotocol.registry/official":{"status":"active","isLatest":true}}}"#).unwrap();
-        let old: Value = serde_json::from_str(r#"{"_meta":{"io.modelcontextprotocol.registry/official":{"isLatest":false}}}"#).unwrap();
-        let retired: Value = serde_json::from_str(r#"{"_meta":{"io.modelcontextprotocol.registry/official":{"status":"retired"}}}"#).unwrap();
+        let old: Value = serde_json::from_str(
+            r#"{"_meta":{"io.modelcontextprotocol.registry/official":{"isLatest":false}}}"#,
+        )
+        .unwrap();
+        let retired: Value = serde_json::from_str(
+            r#"{"_meta":{"io.modelcontextprotocol.registry/official":{"status":"retired"}}}"#,
+        )
+        .unwrap();
         assert!(is_latest(&active));
         assert!(!is_latest(&old));
         assert!(!is_latest(&retired));
@@ -796,7 +1079,8 @@ mod tests {
         assert_eq!(plain.name, "PDF");
         assert_eq!(plain.description, "Work with PDFs");
 
-        let block = frontmatter("---\nname: \"Docs\"\ndescription: >\n  Long text\n  on two lines\n---\n");
+        let block =
+            frontmatter("---\nname: \"Docs\"\ndescription: >\n  Long text\n  on two lines\n---\n");
         assert_eq!(block.name, "Docs");
         assert_eq!(block.description, "Long text on two lines");
 
@@ -805,8 +1089,14 @@ mod tests {
 
     #[test]
     fn reads_commands_from_strings_and_arrays() {
-        assert_eq!(command_of(&serde_json::json!("npx -y pkg")), Some(vec!["npx".into(), "-y".into(), "pkg".into()]));
-        assert_eq!(command_of(&serde_json::json!(["npx", "-y", "pkg"])), Some(vec!["npx".into(), "-y".into(), "pkg".into()]));
+        assert_eq!(
+            command_of(&serde_json::json!("npx -y pkg")),
+            Some(vec!["npx".into(), "-y".into(), "pkg".into()])
+        );
+        assert_eq!(
+            command_of(&serde_json::json!(["npx", "-y", "pkg"])),
+            Some(vec!["npx".into(), "-y".into(), "pkg".into()])
+        );
         assert_eq!(command_of(&serde_json::json!([])), None);
         assert_eq!(command_of(&serde_json::json!(null)), None);
     }
@@ -816,7 +1106,10 @@ mod tests {
         let entry = serde_json::json!({"displayName":"Acme","tagline":"Does things","repoUrl":"https://github.com/a/b","npm":"acme"});
         assert_eq!(first_text(&entry, &["name", "package", "npm"]), "acme");
         assert_eq!(first_text(&entry, &["title", "displayName"]), "Acme");
-        assert_eq!(first_text(&entry, &["homepage", "repoUrl"]), "https://github.com/a/b");
+        assert_eq!(
+            first_text(&entry, &["homepage", "repoUrl"]),
+            "https://github.com/a/b"
+        );
     }
 
     #[test]
@@ -840,6 +1133,7 @@ mod tests {
         let merged = merge(vec![item("a"), item("a"), item("b")], 2);
         assert_eq!(merged.len(), 2);
         assert_eq!(merged[1].name, "b");
+        assert_eq!(merge(vec![item("a"), item("b")], 0).len(), 2);
     }
 
     #[test]
@@ -849,5 +1143,19 @@ mod tests {
         assert!(!valid_repo("a/b/c"));
         assert!(!valid_repo("../evil"));
         assert!(!valid_repo("a b/c"));
+    }
+
+    #[test]
+    fn splits_skill_paths() {
+        assert_eq!(
+            skill_dir("skills/foo/SKILL.md"),
+            Some(("skills/foo", "skills", "foo"))
+        );
+        assert_eq!(
+            skill_dir("plugins/a/skills/foo"),
+            Some(("plugins/a/skills/foo", "plugins/a/skills", "foo"))
+        );
+        assert_eq!(skill_dir("foo"), None);
+        assert_eq!(skill_dir("/SKILL.md"), None);
     }
 }

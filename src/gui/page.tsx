@@ -36,8 +36,8 @@ const FIELDS: JSX.CSSProperties = {
 const MCP_DEFAULT = "https://registry.modelcontextprotocol.io/v0/servers"
 const PAGE_SIZE = 25
 
-function keyOf(kind: Kind, query: string): string {
-  return `${kind}|${query}`
+function keyOf(kind: Kind, query: string, all: boolean): string {
+  return `${kind}|${query}|${all ? "all" : "paged"}`
 }
 
 function labelOf(kind: Kind): string {
@@ -67,6 +67,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
   const [reloading, setReloading] = createSignal(false)
   const [note, setNote] = createSignal("")
   const [page, setPage] = createSignal(0)
+  const [all, setAll] = createSignal(false)
 
   const [showSources, setShowSources] = createSignal(false)
   const [sourcesState, setSourcesState] = createSignal<SourcesState>()
@@ -78,17 +79,17 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
   const [sourceRef, setSourceRef] = createSignal("")
   const [addingSource, setAddingSource] = createSignal(false)
 
-  const currentKey = createMemo(() => keyOf(kind(), query()))
+  const currentKey = createMemo(() => keyOf(kind(), query(), all()))
   const current = createMemo(() => cache().get(currentKey()))
   const catalogBusy = createMemo(() => loadingKeys().has(currentKey()))
 
-  async function loadKind(target: Kind, search: string, force: boolean) {
-    const key = keyOf(target, search)
+  async function loadKind(target: Kind, search: string, force: boolean, every = false) {
+    const key = keyOf(target, search, every)
     if (inflight.has(key)) return
     inflight.add(key)
     setLoadingKeys((keys) => new Set(keys).add(key))
     try {
-      const value = await props.admin.catalog({ kind: target, query: search, force })
+      const value = await props.admin.catalog({ kind: target, query: search, force, all: every })
       setCache((values) => new Map(values).set(key, value))
     } catch (error) {
       const value: CatalogResult = { items: [], error: messageOf(error), source: "", fetchedAt: Date.now() }
@@ -125,13 +126,14 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
   createEffect(() => {
     const target = kind()
     const search = query()
-    void loadKind(target, search, false)
+    void loadKind(target, search, false, all())
   })
 
   // Any new view starts at its first page.
   createEffect(() => {
     kind()
     query()
+    all()
     draft()
     setPage(0)
   })
@@ -335,7 +337,7 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
           size="small"
           variant="neutral"
           busy={catalogBusy() || stateLoading()}
-          onClick={() => void Promise.all([loadKind(kind(), query(), true), loadState()])}
+          onClick={() => void Promise.all([loadKind(kind(), query(), true, all()), loadState()])}
         >
           Refresh
         </props.ctx.ui.Button>
@@ -357,6 +359,14 @@ export function MarketPage(props: { ctx: SetupContext<{}>; admin: IpcClient<type
         <Show when={pending().size > 0}>
           <span style={{ ...MUTED, "font-size": "11px" }}>{pending().size} running…</span>
         </Show>
+        <props.ctx.ui.Button
+          icon="bullet-list"
+          size="small"
+          variant={all() ? "contrast" : "ghost-muted"}
+          onClick={() => setAll((value) => !value)}
+        >
+          All results
+        </props.ctx.ui.Button>
         <props.ctx.ui.Button
           icon="globe"
           size="small"

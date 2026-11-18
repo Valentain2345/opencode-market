@@ -35,7 +35,10 @@ fn run(args: &[String]) -> Result<(), String> {
                         index += 2;
                     }
                     "--limit" => {
-                        limit = args.get(index + 1).and_then(|value| value.parse().ok()).unwrap_or(1000);
+                        limit = args
+                            .get(index + 1)
+                            .and_then(|value| value.parse().ok())
+                            .unwrap_or(1000);
                         index += 2;
                     }
                     "--sources" => {
@@ -55,7 +58,10 @@ fn run(args: &[String]) -> Result<(), String> {
             }
             let file = sources::load(path.as_deref())?;
             let output = catalog::run(&kind, &query, &file, refresh, limit)?;
-            println!("{}", serde_json::to_string(&output).map_err(|error| error.to_string())?);
+            println!(
+                "{}",
+                serde_json::to_string(&output).map_err(|error| error.to_string())?
+            );
             Ok(())
         }
         Some("sources") => {
@@ -64,7 +70,10 @@ fn run(args: &[String]) -> Result<(), String> {
                 path = args.get(2).map(PathBuf::from);
             }
             let file = sources::load(path.as_deref())?;
-            println!("{}", serde_json::to_string_pretty(&file).map_err(|error| error.to_string())?);
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&file).map_err(|error| error.to_string())?
+            );
             Ok(())
         }
         Some("version") | None => {

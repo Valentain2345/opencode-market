@@ -2,14 +2,16 @@ import type { Item, Kind, MarketState } from "./contract"
 import { catalog } from "./gui/catalog"
 import type { InstalledIndex } from "./gui/catalog"
 import { install, remove, snapshot } from "./gui/install"
+import { scaffold } from "./gui/scaffold"
 import type { MarketSource, SourceType } from "./source-schema"
 import { addSource, readSources, removeSource, sourcesPath } from "./sources"
 
 export interface ToolInput {
-  action: "search" | "installed" | "install" | "remove" | "sources" | "addSource" | "removeSource"
+  action: "search" | "installed" | "install" | "remove" | "sources" | "addSource" | "removeSource" | "scaffold"
   kind?: Kind
   query?: string
   name?: string
+  dir?: string
   id?: string
   type?: SourceType
   url?: string
@@ -127,6 +129,7 @@ export async function marketplace(input: ToolInput, runtime: Runtime): Promise<s
   if (action === "sources") return sources()
   if (action === "addSource") return addSourceFromTool(input)
   if (action === "removeSource") return removeSourceFromTool(input)
+  if (action === "scaffold") return (await scaffold(input.name ?? "", input.dir)).message
   if (action !== "install" && action !== "remove") return `Unknown action "${String(action)}".`
 
   const kind = input.kind

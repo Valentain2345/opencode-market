@@ -39,6 +39,42 @@ export function defaultSources(): MarketSource[] {
       path: "skills",
       ref: "main",
     },
+    {
+      id: "agentic-awesome",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "sickn33/agentic-awesome-skills",
+      path: "skills_index.json",
+      ref: "main",
+    },
+    {
+      id: "claude-skills",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "alirezarezvani/claude-skills",
+      path: ".gemini/skills",
+      ref: "main",
+    },
+    {
+      id: "superpowers",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "obra/superpowers",
+      path: "skills",
+      ref: "main",
+    },
+    {
+      id: "wshobson",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "wshobson/agents",
+      path: "plugins",
+      ref: "main",
+    },
   ]
 }
 

@@ -66,7 +66,7 @@ function command() {
   throw new Error("The Rust catalog engine is missing. Run `npm run build` or set MARKET_CORE.");
 }
 function runCore(args) {
-  return new Promise((resolve3, reject) => {
+  return new Promise((resolve4, reject) => {
     const resolved = command();
     const child = spawn(resolved.command, [...resolved.prefix, ...args], { windowsHide: true });
     let stdout = "";
@@ -78,7 +78,7 @@ function runCore(args) {
       settled = true;
       clearTimeout(timer);
       if (error) reject(error);
-      else resolve3(value);
+      else resolve4(value);
     };
     timer = setTimeout(() => {
       child.kill();
@@ -264,6 +264,42 @@ function defaultSources() {
       repo: "vercel-labs/agent-skills",
       path: "skills",
       ref: "main"
+    },
+    {
+      id: "agentic-awesome",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "sickn33/agentic-awesome-skills",
+      path: "skills_index.json",
+      ref: "main"
+    },
+    {
+      id: "claude-skills",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "alirezarezvani/claude-skills",
+      path: ".gemini/skills",
+      ref: "main"
+    },
+    {
+      id: "superpowers",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "obra/superpowers",
+      path: "skills",
+      ref: "main"
+    },
+    {
+      id: "wshobson",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "wshobson/agents",
+      path: "plugins",
+      ref: "main"
     }
   ];
 }
@@ -351,7 +387,7 @@ function installed(item, index) {
     return item.url !== void 0 && index.mcpUrls.has(item.url) || item.command !== void 0 && index.mcpCommands.has(item.command.join(" "));
   return index.skillNames.has(item.name);
 }
-async function catalog(kind, query, force, index) {
+async function catalog(kind, query, force, index, all = false) {
   const dir = globalConfigDir();
   try {
     readSources(dir);
@@ -363,7 +399,8 @@ async function catalog(kind, query, force, index) {
       query,
       "--sources",
       sourcesPath(dir),
-      ...force ? ["--refresh"] : []
+      ...force ? ["--refresh"] : [],
+      ...all ? ["--limit", "0"] : []
     ]);
     return {
       items: output.items.map((item) => ({ ...item, installed: installed(item, index) })),
@@ -435,7 +472,7 @@ function discover() {
 }
 function runCli(args, timeoutMs = 12e4) {
   const [bin, ...prefix] = argv.length > 0 ? argv : discover();
-  return new Promise((resolve3) => {
+  return new Promise((resolve4) => {
     let stdout = "";
     let stderr = "";
     let started = false;
@@ -447,7 +484,7 @@ function runCli(args, timeoutMs = 12e4) {
       settled = true;
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
-      resolve3({
+      resolve4({
         ok: code === 0 && started && !timedOut,
         started,
         timedOut,
@@ -461,7 +498,7 @@ function runCli(args, timeoutMs = 12e4) {
     try {
       child = spawn2(bin, [...prefix, ...args], { stdio: ["ignore", "pipe", "pipe"], env: process.env });
     } catch (error) {
-      resolve3({
+      resolve4({
         ok: false,
         started: false,
         timedOut: false,
@@ -491,7 +528,7 @@ function runCli(args, timeoutMs = 12e4) {
       settled = true;
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
-      resolve3({
+      resolve4({
         ok: false,
         started,
         timedOut,
@@ -646,6 +683,249 @@ function remove(item) {
   return serial(() => item.kind === "plugin" ? removePlugin(item) : removeMcp(item));
 }
 
+// src/gui/scaffold.ts
+import { spawn as spawn3 } from "node:child_process";
+import { mkdir as mkdir3, readdir as readdir2, stat, writeFile as writeFile3 } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { join as join5, resolve as resolve3 } from "node:path";
+var ID2 = /^[a-z][a-z0-9-]{1,31}$/;
+var ANSI2 = /\u001b\[[0-9;]*m/g;
+function titleOf(id) {
+  return id.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+function expand(dir) {
+  if (dir === "~") return homedir3();
+  if (dir.startsWith("~/") || dir.startsWith("~\\")) return join5(homedir3(), dir.slice(2));
+  return resolve3(homedir3(), dir);
+}
+function samePath(a, b) {
+  const left = resolve3(a);
+  const right = resolve3(b);
+  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
+}
+function starterPackage(id) {
+  return `{
+  "name": "${id.startsWith("opencode-") ? id : `opencode-${id}`}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./gui-experimental": "./dist/gui-experimental.cjs",
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "vite build && esbuild src/index.ts --bundle --platform=node --format=esm --external:@opencode/plugin --outfile=dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.3.0",
+    "@types/node": "^22.10.0",
+    "esbuild": "^0.28.0",
+    "solid-js": "^1.9.5",
+    "typescript": "^5.7.0",
+    "vite": "^7.1.0",
+    "vite-plugin-solid": "^2.11.0"
+  }
+}
+`;
+}
+function starterServer(id) {
+  return `import { Plugin } from "@opencode/plugin"
+
+export default Plugin.define({
+  id: "${id}",
+  async setup(ctx) {
+    await ctx.tool.transform((editor) => {
+      editor.add({
+        name: "hello",
+        description: "Say hello. Replace this tool with your plugin's own logic.",
+        input: {
+          type: "object",
+          properties: { name: { type: "string", description: "Who to greet." } },
+          additionalProperties: false,
+        },
+        options: { codemode: false },
+        execute: async (input) => {
+          const name = (input as { name?: string }).name ?? "world"
+          return { content: \`Hello, \${name}!\` }
+        },
+      })
+    })
+  },
+})
+`;
+}
+function starterGui(id) {
+  const title = titleOf(id);
+  return `import { Command, Plugin, SettingsPage } from "@opencode/plugin/gui"
+
+export default Plugin.define({
+  setup(ctx) {
+    ctx.add(SettingsPage, {
+      id: "${id}",
+      title: "${title}",
+      icon: "extensions",
+      render: () => <p style={{ padding: "20px" }}>Hello from ${id}.</p>,
+    })
+
+    ctx.add(Command, () => ({
+      id: "open",
+      title: "Open ${title}",
+      group: "Settings",
+      section: "navigation",
+      run: () => ctx.layout.settings("${id}"),
+    }))
+  },
+})
+`;
+}
+var STARTER_TSCONFIG = `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "jsxImportSource": "solid-js",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "types": ["node"],
+    "lib": ["ES2022", "DOM"]
+  },
+  "include": ["src", "vite.config.ts"]
+}
+`;
+var STARTER_VITE = `import { defineConfig } from "vite"
+import { gui } from "@opencode/plugin/gui/vite"
+
+export default defineConfig({
+  plugins: [gui()],
+})
+`;
+var STARTER_README = `# __TITLE__
+
+An OpenCode plugin with a server tool and a GUI settings page.
+
+- \`src/index.ts\` \u2014 the server half; registers the \`hello\` tool.
+- \`src/gui.tsx\` \u2014 the desktop half; a settings page and a command.
+
+## Develop
+
+\`\`\`sh
+npm install --legacy-peer-deps
+npm run build
+\`\`\`
+
+This directory is already listed in \`plugins\` in the global OpenCode config.
+Reload OpenCode Desktop after a build, then open Settings \u2192 __TITLE__.
+`;
+async function writeStarter(id, target) {
+  const title = titleOf(id);
+  await mkdir3(join5(target, "src"), { recursive: true });
+  await Promise.all([
+    writeFile3(join5(target, "package.json"), starterPackage(id), "utf8"),
+    writeFile3(join5(target, "tsconfig.json"), STARTER_TSCONFIG, "utf8"),
+    writeFile3(join5(target, "vite.config.ts"), STARTER_VITE, "utf8"),
+    writeFile3(join5(target, "README.md"), STARTER_README.replaceAll("__TITLE__", title), "utf8"),
+    writeFile3(join5(target, "src", "index.ts"), starterServer(id), "utf8"),
+    writeFile3(join5(target, "src", "gui.tsx"), starterGui(id), "utf8")
+  ]);
+}
+async function register(target) {
+  await serial(async () => {
+    const config = await readConfig();
+    const list = Array.isArray(config.plugins) ? config.plugins : [];
+    const listed = list.some((entry) => {
+      const value = typeof entry === "string" ? entry : asRecord(entry)?.package;
+      return typeof value === "string" && samePath(value, target);
+    });
+    if (!listed) await editConfig([{ path: ["plugins"], value: [...list, target] }]);
+  });
+}
+function runNpm(args, cwd, timeoutMs) {
+  return new Promise((done) => {
+    let output = "";
+    let settled = false;
+    const finish = (ok, message) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      done({ ok, message });
+    };
+    const child = spawn3("npm", args, {
+      cwd,
+      shell: process.platform === "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+      env: process.env
+    });
+    const timer = setTimeout(() => {
+      child.kill();
+      finish(false, `npm ${args[0]} timed out after ${Math.round(timeoutMs / 1e3)}s.`);
+    }, timeoutMs);
+    const collect = (chunk) => {
+      if (output.length < 64 * 1024) output = (output + String(chunk)).slice(0, 64 * 1024);
+    };
+    child.stdout?.on("data", collect);
+    child.stderr?.on("data", collect);
+    child.on("error", (error) => finish(false, error.message));
+    child.on("close", (code) => {
+      const tail = output.replace(ANSI2, "").split(/\r?\n/).map((line2) => line2.trim()).filter((line2) => line2.length > 0).slice(-3).join(" \xB7 ").slice(0, 400);
+      finish(code === 0, tail);
+    });
+  });
+}
+async function scaffold(name, dir, build = true) {
+  const id = name.trim().toLowerCase();
+  if (!ID2.test(id)) {
+    return {
+      ok: false,
+      message: "Plugin id must be 2\u201332 characters: lowercase letters, digits and dashes, starting with a letter.",
+      needsReload: false
+    };
+  }
+  const target = dir && dir.trim().length > 0 ? expand(dir.trim()) : join5(globalConfigDir(), "plugins", id);
+  try {
+    const info = await stat(target);
+    if (!info.isDirectory()) return { ok: false, message: `${target} is a file, not a folder.`, needsReload: false };
+    if ((await readdir2(target)).length > 0) {
+      return { ok: false, message: `${target} is not empty. Pick another folder or id.`, needsReload: false };
+    }
+  } catch {
+  }
+  try {
+    await writeStarter(id, target);
+  } catch (error) {
+    return { ok: false, message: `Could not write ${target}: ${error instanceof Error ? error.message : String(error)}`, needsReload: false };
+  }
+  if (build) {
+    const install2 = await runNpm(["install", "--legacy-peer-deps", "--no-audit", "--no-fund"], target, 3e5);
+    if (!install2.ok) {
+      return {
+        ok: false,
+        message: `Files are in ${target}, but npm install failed: ${install2.message}`,
+        needsReload: false
+      };
+    }
+    const compile = await runNpm(["run", "build"], target, 3e5);
+    if (!compile.ok) {
+      return {
+        ok: false,
+        message: `Files are in ${target}, but the build failed: ${compile.message}`,
+        needsReload: false
+      };
+    }
+  }
+  await register(target);
+  return {
+    ok: true,
+    message: `Created ${titleOf(id)} in ${target} and registered it. Reload the desktop app to load it.`,
+    needsReload: true
+  };
+}
+
 // src/tool.ts
 var KINDS = ["plugin", "mcp", "skill"];
 var RESULT_LIMIT = 25;
@@ -746,6 +1026,7 @@ async function marketplace(input, runtime) {
   if (action === "sources") return sources();
   if (action === "addSource") return addSourceFromTool(input);
   if (action === "removeSource") return removeSourceFromTool(input);
+  if (action === "scaffold") return (await scaffold(input.name ?? "", input.dir)).message;
   if (action !== "install" && action !== "remove") return `Unknown action "${String(action)}".`;
   const kind = input.kind;
   const name = (input.name ?? "").trim();
