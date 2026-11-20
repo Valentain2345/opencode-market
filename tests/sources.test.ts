@@ -16,7 +16,7 @@ test("a missing file falls back to the built-in sources", (t) => {
   const sources = readSources(workdir(t))
   assert.deepEqual(
     sources.map((source) => source.id),
-    ["npm", "awesome", "mcp-registry", "anthropics", "vercel", "agentic-awesome", "claude-skills", "superpowers", "wshobson"],
+    ["npm", "awesome", "mcp-registry", "anthropics", "vercel", "agentic-awesome", "claude-skills", "superpowers", "wshobson", "composio", "higgsfield", "higgsfield-pack", "higgsfield-prompts", "rea"],
   )
 })
 

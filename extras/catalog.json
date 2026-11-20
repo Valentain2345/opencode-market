@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "name": "rea",
+      "title": "REA · Reverse Engineer Anything",
+      "description": "Reverse engineering MCP: native binaries, Electron/web apps, .NET, EVM bytecode, Android packages, firmware and Apple apps, with Ghidra, IDA or Hopper providers.",
+      "command": ["npx", "-y", "rea-agents@latest", "mcp"],
+      "homepage": "https://github.com/morluto/rea",
+      "version": "6.9.0"
+    }
+  ]
+}

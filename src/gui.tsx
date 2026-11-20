@@ -66,7 +66,7 @@ export default Plugin.define({
           mcpCommands: new Set(state.mcps.filter((mcp) => mcp.type !== "remote").map((mcp) => mcp.detail)),
           skillNames: new Set(state.skills.map((skill) => skill.name)),
         }
-        const result = await catalog(input.kind, input.query, input.force, index, input.all === true)
+        const result = await catalog(input.kind, input.query, input.force, index)
         return result
       },
       installed: () => admin.snapshot(),

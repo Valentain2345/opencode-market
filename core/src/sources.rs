@@ -147,6 +147,57 @@ pub fn defaults() -> SourcesFile {
                 path: Some("plugins".into()),
                 reference: Some("main".into()),
             },
+            Source {
+                id: "composio".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("ComposioHQ/awesome-claude-skills".into()),
+                path: None,
+                reference: Some("master".into()),
+            },
+            Source {
+                id: "higgsfield".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("higgsfield-ai/skills".into()),
+                path: None,
+                reference: Some("main".into()),
+            },
+            Source {
+                id: "higgsfield-pack".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("AKCodez/higgsfield-claude-skills".into()),
+                path: None,
+                reference: Some("master".into()),
+            },
+            Source {
+                id: "higgsfield-prompts".into(),
+                kind: "skill".into(),
+                kind_type: "github-skills".into(),
+                enabled: true,
+                url: None,
+                repo: Some("OSideMedia/higgsfield-ai-prompt-skill".into()),
+                path: Some("skills".into()),
+                reference: Some("main".into()),
+            },
+            // Curated entries the public registries do not carry (see extras/catalog.json).
+            Source {
+                id: "rea".into(),
+                kind: "mcp".into(),
+                kind_type: "github".into(),
+                enabled: true,
+                url: None,
+                repo: Some("Valentain2345/opencode-market".into()),
+                path: Some("extras/catalog.json".into()),
+                reference: Some("main".into()),
+            },
         ],
     }
 }
@@ -186,7 +237,7 @@ mod tests {
     #[test]
     fn defaults_cover_every_kind() {
         let file = defaults();
-        assert_eq!(file.sources.len(), 9);
+        assert_eq!(file.sources.len(), 14);
         for kind in ["plugin", "mcp", "skill"] {
             assert!(file.sources.iter().any(|source| source.kind == kind));
         }

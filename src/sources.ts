@@ -75,6 +75,49 @@ export function defaultSources(): MarketSource[] {
       path: "plugins",
       ref: "main",
     },
+    {
+      id: "composio",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "ComposioHQ/awesome-claude-skills",
+      ref: "master",
+    },
+    {
+      id: "higgsfield",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "higgsfield-ai/skills",
+      ref: "main",
+    },
+    {
+      id: "higgsfield-pack",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "AKCodez/higgsfield-claude-skills",
+      ref: "master",
+    },
+    {
+      id: "higgsfield-prompts",
+      kind: "skill",
+      type: "github-skills",
+      enabled: true,
+      repo: "OSideMedia/higgsfield-ai-prompt-skill",
+      path: "skills",
+      ref: "main",
+    },
+    // Curated entries the public registries do not carry (see extras/catalog.json).
+    {
+      id: "rea",
+      kind: "mcp",
+      type: "github",
+      enabled: true,
+      repo: "Valentain2345/opencode-market",
+      path: "extras/catalog.json",
+      ref: "main",
+    },
   ]
 }
 

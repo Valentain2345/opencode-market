@@ -116,8 +116,6 @@ export const CatalogQuery = Schema.Struct({
   query: Schema.String,
   /** Skip the in-memory cache and hit the network. */
   force: Schema.Boolean,
-  /** Return every result instead of the engine's default cap. */
-  all: Schema.optional(Schema.Boolean),
 })
 
 export const MutateInput = Schema.Struct({

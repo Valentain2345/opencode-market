@@ -7,7 +7,7 @@ Apache-2.0 licensed.
 | --- | --- | --- |
 | Plugins | npm packages tagged `opencode-plugin`, [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode) | official `opencode plugin add` |
 | MCP servers | [official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp.servers.<slug>` in the global config |
-| Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills), [sickn33/agentic-awesome-skills](https://github.com/sickn33/agentic-awesome-skills), [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills), [obra/superpowers](https://github.com/obra/superpowers), [wshobson/agents](https://github.com/wshobson/agents) | `~/.config/opencode/skills/<name>/` |
+| Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills), [sickn33/agentic-awesome-skills](https://github.com/sickn33/agentic-awesome-skills), [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills), [obra/superpowers](https://github.com/obra/superpowers), [wshobson/agents](https://github.com/wshobson/agents), [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills), [higgsfield-ai/skills](https://github.com/higgsfield-ai/skills), [AKCodez/higgsfield-claude-skills](https://github.com/AKCodez/higgsfield-claude-skills), [OSideMedia/higgsfield-ai-prompt-skill](https://github.com/OSideMedia/higgsfield-ai-prompt-skill) | `~/.config/opencode/skills/<name>/` |
 
 ## Install
 
@@ -15,22 +15,12 @@ Requires Node.js 20+ and OpenCode Desktop 2.3+. Windows ships a prebuilt
 `market-core.exe` in `dist/`. Linux and macOS build the engine once during
 install, so they also need [Rust](https://rustup.rs).
 
-macOS and Linux:
+macOS and Linux: run `./install.sh` from a checkout. Windows: run
+`.\install.ps1` in PowerShell.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/Valentain2345/opencode-market/main/install.sh | sh
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://raw.githubusercontent.com/Valentain2345/opencode-market/main/install.ps1 | iex
-```
-
-The one-liners download the latest copy to `~/.local/share/opencode-market`
-(`%LOCALAPPDATA%\opencode-market` on Windows) and register it. Run the same line
-again to update. To work from a checkout instead, clone the repo and run
-`./install.sh` or `.\install.ps1`.
+The installer copies the plugin to `~/.local/share/opencode-market`
+(`%LOCALAPPDATA%\opencode-market` on Windows) and registers it. Run the same
+script again to update.
 
 The installer adds the absolute path to `plugins` in
 `~/.config/opencode/opencode.jsonc`, keeps comments and formatting, and writes a
@@ -75,6 +65,15 @@ missing the defaults below are used. Add and remove sources from the
       "type": "mcp-registry",
       "enabled": true,
       "url": "https://registry.modelcontextprotocol.io/v0/servers"
+    },
+    {
+      "id": "rea",
+      "kind": "mcp",
+      "type": "github",
+      "enabled": true,
+      "repo": "Valentain2345/opencode-market",
+      "path": "extras/catalog.json",
+      "ref": "main"
     },
     {
       "id": "anthropics",
@@ -129,6 +128,39 @@ missing the defaults below are used. Add and remove sources from the
       "repo": "wshobson/agents",
       "path": "plugins",
       "ref": "main"
+    },
+    {
+      "id": "composio",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "ComposioHQ/awesome-claude-skills",
+      "ref": "master"
+    },
+    {
+      "id": "higgsfield",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "higgsfield-ai/skills",
+      "ref": "main"
+    },
+    {
+      "id": "higgsfield-pack",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "AKCodez/higgsfield-claude-skills",
+      "ref": "master"
+    },
+    {
+      "id": "higgsfield-prompts",
+      "kind": "skill",
+      "type": "github-skills",
+      "enabled": true,
+      "repo": "OSideMedia/higgsfield-ai-prompt-skill",
+      "path": "skills",
+      "ref": "main"
     }
   ]
 }
@@ -153,6 +185,8 @@ missing the defaults below are used. Add and remove sources from the
 
 Disabled sources stay in the file with `"enabled": false`. Each source has a
 unique lowercase id; errors are reported per source without hiding the others.
+Results are not capped: the page shows 25 rows at a time, and the count next to
+the kind is the full total.
 
 ## Agents
 
@@ -232,7 +266,7 @@ The plugin is a local directory registered in the global config:
 
 ```jsonc
 {
-  "plugins": ["C:\\Users\\valen\\opencode-market"]
+  "plugins": ["C:\\path\\to\\opencode-market"]
 }
 ```
 

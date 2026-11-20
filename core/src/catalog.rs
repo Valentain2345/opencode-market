@@ -259,19 +259,23 @@ fn npm(source: &Source, http: &Http, query: &str, limit: usize) -> Result<Vec<It
             enc(&text),
             page * 250
         );
-        let data = {
-            let mut tries = 0;
-            loop {
-                match http.json(&url) {
-                    Ok(data) => break data,
-                    Err(error) if error.contains("429") && tries < 3 => {
-                        tries += 1;
-                        std::thread::sleep(Duration::from_secs(2 * tries as u64));
-                    }
-                    Err(error) => return Err(error),
+        // Keep whatever pages already arrived when npm rate-limits us, instead
+        // of dropping the whole npm source and returning only the other sources.
+        let mut data = None;
+        for attempt in 0..4 {
+            match http.json(&url) {
+                Ok(value) => {
+                    data = Some(value);
+                    break;
                 }
+                Err(error) if error.contains("429") && attempt < 3 => {
+                    std::thread::sleep(Duration::from_secs(2 * (attempt as u64 + 1)));
+                }
+                Err(error) if error.contains("429") => break,
+                Err(error) => return Err(error),
             }
-        };
+        }
+        let Some(data) = data else { break };
         if query.trim().is_empty() {
             std::thread::sleep(Duration::from_millis(700));
         }
