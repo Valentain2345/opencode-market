@@ -6,7 +6,7 @@ Apache-2.0 licensed.
 | Kind | Default sources | Install |
 | --- | --- | --- |
 | Plugins | npm packages tagged `opencode-plugin`, [awesome-opencode](https://github.com/awesome-opencode/awesome-opencode) | official `opencode plugin add` |
-| MCP servers | [official MCP Registry](https://registry.modelcontextprotocol.io) | `mcp.servers.<slug>` in the global config |
+| MCP servers | [official MCP Registry](https://registry.modelcontextprotocol.io), plus a curated set of popular servers (Playwright, Context7, Chrome DevTools, Desktop Commander, Notion, Supabase, Sentry, MongoDB, GitHub, Firecrawl and more) | `mcp.servers.<slug>` in the global config |
 | Skills | [anthropics/skills](https://github.com/anthropics/skills), [vercel-labs/agent-skills](https://github.com/vercel-labs/agent-skills), [sickn33/agentic-awesome-skills](https://github.com/sickn33/agentic-awesome-skills), [alirezarezvani/claude-skills](https://github.com/alirezarezvani/claude-skills), [obra/superpowers](https://github.com/obra/superpowers), [wshobson/agents](https://github.com/wshobson/agents), [ComposioHQ/awesome-claude-skills](https://github.com/ComposioHQ/awesome-claude-skills), [higgsfield-ai/skills](https://github.com/higgsfield-ai/skills), [AKCodez/higgsfield-claude-skills](https://github.com/AKCodez/higgsfield-claude-skills), [OSideMedia/higgsfield-ai-prompt-skill](https://github.com/OSideMedia/higgsfield-ai-prompt-skill) | `~/.config/opencode/skills/<name>/` |
 
 ## Install
@@ -67,7 +67,7 @@ missing the defaults below are used. Add and remove sources from the
       "url": "https://registry.modelcontextprotocol.io/v0/servers"
     },
     {
-      "id": "rea",
+      "id": "curated",
       "kind": "mcp",
       "type": "github",
       "enabled": true,

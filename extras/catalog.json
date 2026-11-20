@@ -7,6 +7,198 @@
       "command": ["npx", "-y", "rea-agents@latest", "mcp"],
       "homepage": "https://github.com/morluto/rea",
       "version": "6.9.0"
+    },
+    {
+      "name": "playwright",
+      "title": "Playwright",
+      "description": "Official Microsoft browser automation: navigate, click, type, screenshot, read the accessibility tree and run page scripts.",
+      "command": ["npx", "-y", "@playwright/mcp@latest"],
+      "homepage": "https://github.com/microsoft/playwright-mcp",
+      "version": "0.0.86"
+    },
+    {
+      "name": "chrome-devtools",
+      "title": "Chrome DevTools",
+      "description": "Drive a real Chrome: console, network, performance traces, screenshots and DOM inspection.",
+      "command": ["npx", "-y", "chrome-devtools-mcp@latest"],
+      "homepage": "https://github.com/ChromeDevTools/chrome-devtools-mcp",
+      "version": "1.13.0"
+    },
+    {
+      "name": "desktop-commander",
+      "title": "Desktop Commander",
+      "description": "Terminal and file editing on the host: run commands, read and write files, search and manage long-running processes.",
+      "command": ["npx", "-y", "@wonderwhy-er/desktop-commander@latest"],
+      "homepage": "https://github.com/wonderwhy-er/DesktopCommanderMCP",
+      "version": "0.3.4"
+    },
+    {
+      "name": "context7",
+      "title": "Context7",
+      "description": "Up-to-date library documentation and code examples pulled on demand, so the model stops guessing APIs.",
+      "command": ["npx", "-y", "@upstash/context7-mcp@latest"],
+      "homepage": "https://github.com/upstash/context7",
+      "version": "4.7.3"
+    },
+    {
+      "name": "filesystem",
+      "title": "Filesystem",
+      "description": "Official reference server for reading and writing files. The command grants the current folder; edit it to grant another path.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem@latest", "."],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2.4.0"
+    },
+    {
+      "name": "memory",
+      "title": "Memory",
+      "description": "Official knowledge-graph memory that persists entities and relations between sessions.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-memory@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2.2.1"
+    },
+    {
+      "name": "everything",
+      "title": "Everything",
+      "description": "Official reference server that exercises every MCP feature: tools, resources, prompts and sampling.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-everything@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2.3.1"
+    },
+    {
+      "name": "notion",
+      "title": "Notion",
+      "description": "Official Notion server: search, read and update pages and databases. Needs NOTION_TOKEN in the server environment.",
+      "command": ["npx", "-y", "@notionhq/notion-mcp-server@latest"],
+      "homepage": "https://github.com/makenotion/notion-mcp-server",
+      "version": "2.6.1"
+    },
+    {
+      "name": "sequential-thinking",
+      "title": "Sequential Thinking",
+      "description": "Official structured-reasoning server: break a hard problem into reviseable thought steps.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-sequential-thinking@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2.2.0"
+    },
+    {
+      "name": "supabase",
+      "title": "Supabase",
+      "description": "Official Supabase server: query tables, manage projects and run SQL. Append --access-token=<token> to the command.",
+      "command": ["npx", "-y", "@supabase/mcp-server-supabase@latest"],
+      "homepage": "https://github.com/supabase-community/supabase-mcp",
+      "version": "0.18.0"
+    },
+    {
+      "name": "sentry",
+      "title": "Sentry",
+      "description": "Official Sentry server: search issues and events and inspect stack traces. Append --access-token=<token>.",
+      "command": ["npx", "-y", "@sentry/mcp-server@latest"],
+      "homepage": "https://github.com/getsentry/sentry-mcp",
+      "version": "0.50.0"
+    },
+    {
+      "name": "slack",
+      "title": "Slack",
+      "description": "Official Slack server: list channels, read history and post messages. Needs SLACK_BOT_TOKEN and SLACK_TEAM_ID.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-slack@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2025.4.25"
+    },
+    {
+      "name": "postgres",
+      "title": "Postgres",
+      "description": "Official read-only Postgres server. Append your postgresql:// connection string to the command.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-postgres@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "0.6.2"
+    },
+    {
+      "name": "figma",
+      "title": "Figma",
+      "description": "Developer MCP for Figma layouts and styles, in stdio mode. Needs FIGMA_API_KEY.",
+      "command": ["npx", "-y", "figma-developer-mcp@latest", "--stdio"],
+      "homepage": "https://github.com/GLips/Figma-Context-MCP",
+      "version": "0.13.2"
+    },
+    {
+      "name": "firecrawl",
+      "title": "Firecrawl",
+      "description": "Crawl, scrape and extract structured data from websites. Needs FIRECRAWL_API_KEY.",
+      "command": ["npx", "-y", "firecrawl-mcp@latest"],
+      "homepage": "https://github.com/firecrawl/firecrawl-mcp-server",
+      "version": "3.41.0"
+    },
+    {
+      "name": "mongodb",
+      "title": "MongoDB",
+      "description": "Official MongoDB server: inspect collections, run queries and manage indexes. Defaults to localhost; add --connectionString for Atlas.",
+      "command": ["npx", "-y", "mongodb-mcp-server@latest"],
+      "homepage": "https://github.com/mongodb-js/mongodb-mcp-server",
+      "version": "3.3.0"
+    },
+    {
+      "name": "github",
+      "title": "GitHub",
+      "description": "Official reference GitHub server: repos, issues, pull requests and code search. Needs GITHUB_PERSONAL_ACCESS_TOKEN.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-github@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2025.4.8"
+    },
+    {
+      "name": "apify",
+      "title": "Apify Actors",
+      "description": "Run any Apify actor as an MCP tool: scraping, maps, social and market data. Needs APIFY_TOKEN.",
+      "command": ["npx", "-y", "@apify/actors-mcp-server@latest"],
+      "homepage": "https://github.com/apify/actors-mcp-server",
+      "version": "0.21.12"
+    },
+    {
+      "name": "exa",
+      "title": "Exa Search",
+      "description": "Neural web search and page contents for agents. Needs EXA_API_KEY.",
+      "command": ["npx", "-y", "exa-mcp-server@latest"],
+      "homepage": "https://github.com/exa-labs/exa-mcp-server",
+      "version": "3.5.1"
+    },
+    {
+      "name": "puppeteer",
+      "title": "Puppeteer",
+      "description": "Reference browser automation server: navigate, screenshot and evaluate in a headless browser.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-puppeteer@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "2025.5.12"
+    },
+    {
+      "name": "brave-search",
+      "title": "Brave Search",
+      "description": "Web, local and image search through the Brave API. Needs BRAVE_API_KEY.",
+      "command": ["npx", "-y", "@modelcontextprotocol/server-brave-search@latest"],
+      "homepage": "https://github.com/modelcontextprotocol/servers",
+      "version": "0.6.2"
+    },
+    {
+      "name": "kubernetes",
+      "title": "Kubernetes",
+      "description": "Manage a cluster: pods, logs, deployments and Helm, using your kubeconfig.",
+      "command": ["npx", "-y", "mcp-server-kubernetes@latest"],
+      "homepage": "https://github.com/Flux159/mcp-server-kubernetes",
+      "version": "4.2.3"
+    },
+    {
+      "name": "stripe",
+      "title": "Stripe",
+      "description": "Official Stripe server: customers, payments, invoices and refunds. Append --api-key=<key> to the command.",
+      "command": ["npx", "-y", "@stripe/mcp@latest", "--tools=all"],
+      "homepage": "https://github.com/stripe/agent-toolkit",
+      "version": "0.3.4"
+    },
+    {
+      "name": "tavily",
+      "title": "Tavily",
+      "description": "Search, extract and crawl tuned for agents. Needs TAVILY_API_KEY.",
+      "command": ["npx", "-y", "tavily-mcp@latest"],
+      "homepage": "https://github.com/tavily-ai/tavily-mcp",
+      "version": "0.2.22"
     }
   ]
 }

@@ -336,7 +336,7 @@ function defaultSources() {
     },
     // Curated entries the public registries do not carry (see extras/catalog.json).
     {
-      id: "rea",
+      id: "curated",
       kind: "mcp",
       type: "github",
       enabled: true,

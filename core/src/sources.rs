@@ -189,7 +189,7 @@ pub fn defaults() -> SourcesFile {
             },
             // Curated entries the public registries do not carry (see extras/catalog.json).
             Source {
-                id: "rea".into(),
+                id: "curated".into(),
                 kind: "mcp".into(),
                 kind_type: "github".into(),
                 enabled: true,
